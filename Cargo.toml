@@ -14,7 +14,7 @@ terminal-core = { path = "crates/terminal-core" }
 platform = { path = "crates/platform" }
 alacritty_terminal = "0.26.0"
 portable-pty = "0.9.0"
-iced = { version = "0.14.0", default-features = false, features = ["wgpu", "canvas", "tokio", "advanced", "thread-pool"] }
+iced = { version = "0.14.0", default-features = false, features = ["wgpu", "canvas", "tokio", "advanced", "thread-pool", "x11", "wayland"] }
 sysinfo = { version = "0.39.6", default-features = false, features = ["system", "network"] }
 netstat2 = "0.11.2"
 maxminddb = "0.32.0"

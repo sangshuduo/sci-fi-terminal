@@ -62,8 +62,7 @@ impl ConfigPaths {
     /// Platform configuration directory (XDG on Linux, Application Support on macOS,
     /// `%APPDATA%` on Windows).
     pub fn platform_default() -> Option<Self> {
-        directories::ProjectDirs::from("", "", "sci-fi-terminal")
-            .map(|dirs| Self::from_dir(dirs.config_dir().to_path_buf()))
+        platform::paths::config_dir().map(Self::from_dir)
     }
 }
 

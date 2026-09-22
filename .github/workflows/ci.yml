@@ -19,7 +19,7 @@ jobs:
       # actions/checkout v4.2.2, pinned to a reviewed commit.
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - name: Install native libraries
-        run: sudo apt-get update && sudo apt-get install -y pkg-config libxkbcommon-dev libwayland-dev
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libxkbcommon-dev libwayland-dev libasound2-dev
       - name: Toolchain
         run: rustup show active-toolchain
       - run: cargo fmt --all -- --check
@@ -36,6 +36,6 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - name: Install native libraries
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y pkg-config libxkbcommon-dev libwayland-dev
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libxkbcommon-dev libwayland-dev libasound2-dev
       - run: cargo test --workspace --locked
       - run: cargo build --workspace --release --locked
