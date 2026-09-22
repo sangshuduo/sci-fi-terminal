@@ -1,7 +1,13 @@
 # sci-fi-terminal — independent native terminal
 
-**Status: design and planning only. No application has been implemented or benchmarked.**
+**Status: pre-MVP developer preview.** A working vertical slice exists (real PTY shells, tabs/splits, settings, themes, system panel); MVP gates are not yet met or benchmarked. See [implementation status](docs/IMPLEMENTATION_STATUS.md) for what is done and what is open.
 The project and directory name is `sci-fi-terminal`.
+
+```sh
+cargo run -p sci-fi-terminal --release      # launch
+cargo run -p sci-fi-terminal -- --help       # --config, --check-config, --safe-mode
+cargo test --workspace
+```
 
 An original Rust-first desktop terminal combining a dependable daily shell with optional GPU-rendered instrumentation and visual styling. Windows, macOS, and Linux share the application core. There is no webview, Electron runtime, mandatory service, or cloud dependency.
 
@@ -18,4 +24,6 @@ The recommended starting architecture is Iced with its wgpu renderer, a custom t
 7. [Verification and performance](docs/TESTING.md): acceptance cases and measurable budgets.
 8. [Delivery and development](docs/DEVELOPMENT.md): proposed repository, platforms, workflow, packaging, and release gates.
 
-All proposed paths below `crates/`, `tests/`, `assets/`, and `.github/` describe future implementation, not files already delivered. Example TOML is a proposed contract, not a supported application interface. No packages have been installed and no third-party source has been vendored during this planning task.
+9. [Implementation status](docs/IMPLEMENTATION_STATUS.md): what the code delivers today and the known gaps against the spec.
+
+`crates/` and `.github/workflows/ci.yml` now exist; proposed paths under `tests/`, `assets/`, `packaging/`, `benches/` and `fuzz/` are still future work. No third-party source has been vendored.
