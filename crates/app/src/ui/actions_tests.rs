@@ -120,6 +120,31 @@ fn overrides_rebind_unbind_and_report_conflicts() {
 }
 
 #[test]
+fn bare_text_key_is_rejected_in_terminal_context_too() {
+    for keys in ["c", "Shift+C", "Enter"] {
+        let keymap = Keymap::build(&[binding("terminal.copy", "terminal", keys)], false);
+        assert!(
+            keymap
+                .diagnostics
+                .iter()
+                .any(|d| d.contains("would block typing")),
+            "{keys} should be rejected"
+        );
+        let chord = Chord::parse(keys).expect("parse");
+        assert_eq!(
+            keymap.resolve(&chord, true),
+            None,
+            "{keys} must reach the terminal"
+        );
+    }
+    // Non-text keys with only Shift remain valid terminal shortcuts.
+    let keymap = Keymap::build(&[], false);
+    assert!(keymap.diagnostics.is_empty());
+    let page_up = Chord::parse("Shift+PageUp").expect("parse");
+    assert_eq!(keymap.resolve(&page_up, true), Some(Action::ScrollPageUp));
+}
+
+#[test]
 fn unmodified_global_shortcut_is_rejected() {
     let keymap = Keymap::build(&[binding("palette.toggle", "global", "P")], false);
     assert!(

@@ -60,7 +60,7 @@ Status as of 2026-09-22, branch `feat/terminal-foundation`. This records what ex
 | Accessibility | Iced 0.14 has no accessibility tree. The bounded text representation (`ViewportSnapshot::visible_text`) exists but is not connected to a native bridge. | TECHNICAL_SPEC §UI and component contract |
 | Descendant cleanup | Termination is portable-pty's SIGHUP (Unix) or TerminateProcess (Windows). The process group is not escalated to SIGKILL, and no Windows Job Object is used. | TERMINAL §Lifecycle |
 | Resize stall | PTY resize runs synchronously on the owner thread. The 500 ms stall timeout and cancellation are not implemented, and old-epoch hit tests are not letterboxed. | TECHNICAL_SPEC §Resize transaction |
-| Search | Runs on the owner thread over the retained grid, not over off-thread 1 MiB chunks. Matches do not cross soft-wrapped rows. | TECHNICAL_SPEC §Architecture |
+| Search | Runs on the owner thread over the retained grid, not over off-thread 1 MiB chunks. It is not cancellable and not debounced, so each keystroke rescans the whole history and delays output for that session. Matches do not cross soft-wrapped rows. | TECHNICAL_SPEC §Architecture |
 | History accounting | Scrollback is capped by the minimum of line count and bytes ÷ (columns × 32 B). Snapshot and search retention are not accounted separately. | TECHNICAL_SPEC §Scheduling |
 | Config reload | No file watching and no 250 ms debounce; configuration changes take effect on restart or through the settings dialog. | CONFIGURATION §Files and precedence |
 | Links / bell | OSC 8 links are not activated, and the bell is counted but not shown. | TERMINAL §Untrusted control sequences |

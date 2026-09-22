@@ -317,6 +317,15 @@ impl Chord {
     fn has_modifier(&self) -> bool {
         self.ctrl || self.alt || self.logo
     }
+
+    /// Whether binding this chord would steal keys the user types into the
+    /// terminal. Shift alone still produces text, so `Shift+A` blocks typing,
+    /// while `Shift+PageUp` does not.
+    fn blocks_typing(&self) -> bool {
+        const TYPING_KEYS: &[&str] = &["enter", "tab", "space", "backspace", "escape", "delete"];
+        let texty = self.key.chars().count() == 1 || TYPING_KEYS.contains(&self.key.as_str());
+        !self.has_modifier() && texty
+    }
 }
 
 /// Split on `+` while allowing `+` itself as the final key (`Ctrl++`).
@@ -482,7 +491,9 @@ impl Keymap {
                 return;
             }
         };
-        if !chord.has_modifier() && context == Context::Global {
+        // Both contexts are resolved before terminal encoding, so a bare text key
+        // in either would swallow typing; global shortcuts also need a modifier.
+        if chord.blocks_typing() || (context == Context::Global && !chord.has_modifier()) {
             self.diagnostics.push(format!(
                 "{}: `{keys}` has no Ctrl/Alt/Cmd modifier and would block typing",
                 action.info().id
