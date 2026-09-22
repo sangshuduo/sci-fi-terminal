@@ -12,7 +12,7 @@ use iced::alignment;
 use iced::mouse::{self, Cursor};
 use iced::widget::canvas::{self, Cache, Event, Frame, Geometry, Path, Stroke, Text};
 use iced::widget::text::{LineHeight, Shaping};
-use iced::{Color, Font, Point, Rectangle, Renderer, Size, keyboard, window};
+use iced::{Color, Font, Point, Rectangle, Renderer, Size, keyboard, touch, window};
 use terminal_core::{CellFlags, CellText, CursorShape, GridPoint, SearchResult, ViewportSnapshot};
 
 use super::cells::{CellMetrics, cell_colors, mix, to_color};
@@ -46,6 +46,10 @@ pub enum TerminalEvent {
         lines: f32,
         at: GridPoint,
     },
+    /// A touch tap without movement: focus the pane and clear the selection.
+    Tapped {
+        at: GridPoint,
+    },
 }
 
 /// Everything the surface needs to draw one pane.
@@ -60,6 +64,10 @@ pub struct TerminalView<'a, Message> {
     pub effects: EffectsPreset,
     pub overlay: Option<String>,
     pub on_event: Box<dyn Fn(TerminalEvent) -> Message + 'a>,
+    /// One-finger drag scrolls; otherwise touches only focus.
+    pub touch_scroll: bool,
+    /// Edge glow strength from the theme style (0 disables).
+    pub glow: f32,
 }
 
 #[derive(Default)]
@@ -68,7 +76,18 @@ pub struct ViewState {
     dragging: bool,
     modifiers: keyboard::Modifiers,
     last_press: Option<(Instant, GridPoint, u8)>,
+    touch: Option<TouchTrack>,
 }
+
+/// One tracked finger: drag scrolls, a tap without movement focuses.
+struct TouchTrack {
+    finger: touch::Finger,
+    last: Point,
+    moved: bool,
+}
+
+/// Movement (px) before a touch counts as a drag rather than a tap.
+const TAP_SLOP: f32 = 8.0;
 
 impl<Message> TerminalView<'_, Message> {
     fn cell_at(&self, bounds: Rectangle, position: Point) -> GridPoint {
@@ -142,6 +161,7 @@ impl<Message> canvas::Program<Message> for TerminalView<'_, Message> {
                 None
             }
             Event::Mouse(mouse_event) => self.mouse(state, mouse_event, bounds, cursor),
+            Event::Touch(touch_event) => self.touch(state, touch_event, bounds),
             _ => None,
         }
     }
@@ -175,6 +195,58 @@ impl<Message> canvas::Program<Message> for TerminalView<'_, Message> {
 }
 
 impl<Message> TerminalView<'_, Message> {
+    fn touch(
+        &self,
+        state: &mut ViewState,
+        event: &touch::Event,
+        bounds: Rectangle,
+    ) -> Option<canvas::Action<Message>> {
+        match *event {
+            touch::Event::FingerPressed { id, position }
+                if bounds.contains(position) && state.touch.is_none() =>
+            {
+                state.touch = Some(TouchTrack {
+                    finger: id,
+                    last: position,
+                    moved: false,
+                });
+                Some(canvas::Action::capture())
+            }
+            touch::Event::FingerMoved { id, position } => {
+                let track = state.touch.as_mut().filter(|t| t.finger == id)?;
+                let dy = position.y - track.last.y;
+                if !track.moved && dy.abs() < TAP_SLOP {
+                    return Some(canvas::Action::capture());
+                }
+                track.moved = true;
+                track.last = position;
+                if !self.touch_scroll {
+                    return Some(canvas::Action::capture());
+                }
+                // Dragging down reveals earlier output, like scrolling a document.
+                let lines = dy / self.metrics.height;
+                let at = self.cell_at(bounds, position);
+                Some(
+                    canvas::Action::publish((self.on_event)(TerminalEvent::Wheel { lines, at }))
+                        .and_capture(),
+                )
+            }
+            touch::Event::FingerLifted { id, position }
+            | touch::Event::FingerLost { id, position } => {
+                let track = state.touch.take().filter(|t| t.finger == id)?;
+                if track.moved {
+                    return Some(canvas::Action::capture());
+                }
+                let at = self.cell_at(bounds, position);
+                Some(
+                    canvas::Action::publish((self.on_event)(TerminalEvent::Tapped { at }))
+                        .and_capture(),
+                )
+            }
+            touch::Event::FingerPressed { .. } => None,
+        }
+    }
+
     fn mouse(
         &self,
         state: &mut ViewState,
@@ -446,8 +518,24 @@ impl<Message> TerminalView<'_, Message> {
             Size::new(size.width - 1.0, size.height - 1.0),
         );
         if self.effects == EffectsPreset::Subtle {
-            let glow = Color { a: 0.18, ..accent };
-            frame.stroke(&rect, Stroke::default().with_color(glow).with_width(6.0));
+            // Static glow: the theme's [style] glow sets its strength (a floor keeps
+            // the preset visible for themes without one). Never animated, never over glyphs.
+            let strength = self.glow.max(0.18).clamp(0.0, 1.0);
+            let outer = Color {
+                a: 0.25 * strength,
+                ..accent
+            };
+            frame.stroke(
+                &rect,
+                Stroke::default()
+                    .with_color(outer)
+                    .with_width(4.0 + 8.0 * strength),
+            );
+            let inner = Color {
+                a: 0.5 * strength,
+                ..accent
+            };
+            frame.stroke(&rect, Stroke::default().with_color(inner).with_width(2.0));
         }
         frame.stroke(
             &rect,

@@ -49,10 +49,37 @@ max_sessions = 8
 enabled = true
 interval_ms = 1000
 
+[panels.processes]
+enabled = true
+count = 6              # 1-10; name/PID/CPU/memory only
+
+[panels.network]
+enabled = true
+interval_ms = 2000     # >= 1000
+connections = true
+geoip_database = ""    # local .mmdb path; empty = off; never downloaded
+
+[panels.files]
+enabled = true
+show_hidden = false
+
 [effects]
 preset = "off"
 intensity = 0.15
 max_fps = 30
+
+[sound]
+enabled = false
+volume = 0.4           # 0-1
+keypress = false       # typing ticks, separately toggleable
+
+[input]
+option_as_alt = false  # macOS: Option sends ESC-prefixed Meta
+touch_scroll = true
+
+[keyboard]
+on_screen = false
+layout = "en-us"       # built-in, or keyboards/<id>.toml
 
 [[keybindings]]
 action = "session.new_tab"
@@ -94,6 +121,18 @@ ansi = ["#14212B", "#D96F78", "#83B98A", "#D9BC76",
         "#697B89", "#FF939C", "#A2D7AA", "#F5D998",
         "#A1C4F0", "#D8B0E8", "#9DDFE4", "#F3F7FA"]
 ```
+
+An optional `[style]` table shapes the chrome without code (ADR-005). This is the supported alternative to stylesheet injection:
+
+```toml
+[style]
+corner_radius = 2.0     # 0-16 px
+border_width = 1.0      # 0-4 px
+glow = 0.35             # 0-1, static edge glow when effects are on
+ui_font = ""            # font family name for panel titles and tabs; empty = system UI font
+```
+
+On-screen keyboard layouts live in `keyboards/<id>.toml`. Each key has exactly one of `text` (with optional `shifted`), `named` (e.g. `enter`, `backspace`, `up`), `modifier` (`shift`/`ctrl`/`alt`) or `action = "caps"`. It also accepts optional `label` and `width` fields. Keys cannot hold multi-character command strings.
 
 Missing state-specific UI tokens derive from built-in defaults with contrast checks; missing required base or ANSI tokens reject the file. Theme previews show editor text, cursor, selection, ANSI palette, dialogs, and focused controls. Theme values never include filesystem imports, URLs, scripts, or shader source. Limit theme/config files to 1 MiB and theme identifiers to safe filename-independent IDs. Theme discovery does not follow symlinks outside the selected theme directory. User font files are a separately selected local resource; no automatic network font fetches.
 

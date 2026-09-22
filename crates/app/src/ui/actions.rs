@@ -32,6 +32,8 @@ pub enum Action {
     FontIncrease,
     FontDecrease,
     FontReset,
+    ToggleKeyboard,
+    ToggleSound,
 }
 
 /// Where a binding applies. Global bindings win over terminal encoding.
@@ -244,6 +246,22 @@ pub const ACTIONS: &[ActionInfo] = &[
         Global,
         Some("Ctrl+-"),
         Some("Cmd+-")
+    ),
+    action!(
+        ToggleKeyboard,
+        "keyboard.toggle",
+        "Toggle on-screen keyboard",
+        Global,
+        Some("Ctrl+Shift+K"),
+        Some("Cmd+Shift+K")
+    ),
+    action!(
+        ToggleSound,
+        "sound.toggle",
+        "Toggle sound effects",
+        Global,
+        None,
+        None
     ),
     action!(
         FontReset,

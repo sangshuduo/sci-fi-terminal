@@ -51,6 +51,30 @@ Status as of 2026-09-22, branch `feat/terminal-foundation`. This records what ex
   - A second built-in panel (Sessions) confirms that a new panel can be registered without touching terminal internals.
 - **CI.** `.github/workflows/ci.yml` runs fmt and clippy on Linux, then tests and a release build on Linux, macOS and Windows. Actions are pinned to commit SHAs.
 
+## Workspace extensions (ADR-005)
+
+- **Monitoring** (`crates/app/src/monitor`, `panels/worker.rs`)
+  - One background worker samples only what the visible panels need: system, top processes (name/PID/CPU/memory; no command lines or environment), interface rates, and up to 200 sockets through `netstat2`.
+  - Offline GeoIP comes from a user-supplied `.mmdb` file. Only public addresses are looked up, and nothing is downloaded.
+  - Sampling runs every ≥ 1 s while the window is focused and every ≥ 5 s while unfocused, and stops when the panel is hidden.
+- **Directory viewer** (`panels/files.rs`)
+  - Follows the focused shell's working directory, read from the process table, and retargets when focus changes.
+  - Read-only listing capped at 500 entries, with control characters in names masked.
+  - Clicking a folder types a POSIX-quoted `cd -- '…'` without pressing Enter.
+- **Touch and on-screen keyboard** (`osk/`, `render/terminal_view.rs`)
+  - One-finger drag scrolls (mouse reporting and alternate-screen rules still apply). A tap focuses the pane and clears the selection.
+  - The on-screen keyboard is built in (en-us), and user layouts can be added as `keyboards/<id>.toml`. Modifiers are sticky one-shot. Keys produce the same `KeyPress` events as a physical keyboard.
+  - Toggled with `keyboard.toggle`, Ctrl/Cmd+Shift+K.
+- **Sound** (`sound/`)
+  - Seven cues synthesised at runtime; no audio files are shipped. Off by default.
+  - Volume and typing sounds are set separately.
+  - Rate-limited (keypress ≤ 1 per 30 ms, other cues ≤ 1 per 80 ms each, ≤ 4 overlapping). The audio device is opened on its own thread only when sound is enabled.
+  - Cues: session start, exit, error, bell, and panel/keyboard toggles.
+- **Theme styling** (`config/style.rs`)
+  - An optional `[style]` table controls corner radius, border width, static glow and UI font. It is validated, rejects unknown keys, and has no code, URL or path surface.
+  - Signal and Graphite ship with glow; High contrast uses square 2 px borders.
+- **Settings.** A new "Input, touch & sound" category, panel toggles, and a GeoIP path field. The config schema gains `[panels.processes|network|files]`, `[sound]`, `[input]` and `[keyboard]` sections.
+
 ## Known gaps (spec requirements not yet met)
 
 | Area | Gap | Spec reference |
@@ -65,7 +89,9 @@ Status as of 2026-09-22, branch `feat/terminal-foundation`. This records what ex
 | Config reload | No file watching and no 250 ms debounce; configuration changes take effect on restart or through the settings dialog. | CONFIGURATION §Files and precedence |
 | Links / bell | OSC 8 links are not activated, and the bell is counted but not shown. | TERMINAL §Untrusted control sequences |
 | Cursor blink | The setting is stored but ignored; the cursor is always steady. | CONFIGURATION |
-| Option-as-Alt | macOS Option is always treated as a text modifier; the setting is not exposed yet. | TERMINAL §Unicode, selection and input |
+| Extensions verification | Several paths have no test that exercises them for real. **GeoIP**: lookups against a real `.mmdb` are not unit-tested because no database fixture is bundled. **Sound**: playback was not checked by ear. **Touch**: gestures were not tried on touch hardware. **On-screen keyboard**: clicks were only exercised through unit tests (key → bytes). | ADR-005 |
+| Directory viewer source | Reads the working directory of the shell process itself, not of its foreground child, and has no OSC 7 support yet. Windows may not expose it (the panel then shows "unavailable"). | ADR-005 follow-up |
+| Connections | Sockets owned by other users may be hidden without elevated rights. PIDs are captured but not shown. | ADR-005 |
 | Packaging | No installers, notices bundle, SBOM or signing. | DEVELOPMENT §Packaging |
 | Evidence | No benchmark baseline, fuzzing, vttest subset or Linux/Windows desktop smoke tests. | TESTING |
 

@@ -12,6 +12,7 @@ use super::input::{KeyPress, chord, encode};
 use super::state::{PaneState, Tab};
 use crate::render::TerminalEvent;
 use crate::session::{InputKind, QueueError, SessionCommand};
+use crate::sound::Cue;
 
 impl App {
     /// A session published new state: refresh only that pane.
@@ -25,7 +26,17 @@ impl App {
         let Some(pane) = pane else {
             return Task::none();
         };
-        match pane.refresh() {
+        let (bells, was_live) = (pane.published.bells, pane.published.status.is_live());
+        let copied = pane.refresh();
+        let rang = pane.published.bells != bells;
+        let ended = was_live && !pane.published.status.is_live();
+        if rang {
+            self.play(Cue::Bell);
+        }
+        if ended {
+            self.play(Cue::SessionExit);
+        }
+        match copied {
             Some(text) => iced::clipboard::write(text),
             None => Task::none(),
         }
@@ -78,7 +89,8 @@ impl App {
     }
 
     fn send_key(&mut self, press: &KeyPress) {
-        let option_as_alt = false;
+        let option_as_alt = self.config.input.option_as_alt;
+        self.play(Cue::KeyPress);
         let mut busy = false;
         self.for_focused(|pane| {
             let Some(session) = &pane.session else { return };
@@ -165,6 +177,7 @@ impl App {
                 }
             }
             TerminalEvent::Wheel { lines, at } => wheel(pane, lines, at),
+            TerminalEvent::Tapped { .. } => pane.send(SessionCommand::SelectClear),
         }
         Task::none()
     }

@@ -135,6 +135,7 @@ pub struct SessionHandle {
     writes: Arc<write_queue::WriteQueue>,
     shared: Arc<Shared>,
     label: String,
+    pid: Option<u32>,
 }
 
 impl SessionHandle {
@@ -145,6 +146,11 @@ impl SessionHandle {
     /// Profile label, e.g. `zsh` or `pwsh`.
     pub fn label(&self) -> &str {
         &self.label
+    }
+
+    /// OS process id of the shell, when the platform reports one.
+    pub fn pid(&self) -> Option<u32> {
+        self.pid
     }
 
     /// Send a command without blocking.

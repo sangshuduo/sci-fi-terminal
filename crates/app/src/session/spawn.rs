@@ -63,6 +63,7 @@ pub fn spawn_session(
         write_err_tx,
         doorbell_tx.clone(),
     );
+    let pid = process.child.process_id();
     spawn_waiter(config.id, process.child, exit_tx, doorbell_tx.clone());
 
     let model = TerminalModel::new(config.id, config.size, config.limits);
@@ -89,6 +90,7 @@ pub fn spawn_session(
         writes,
         shared,
         label: config.shell.label,
+        pid,
     })
 }
 

@@ -27,10 +27,26 @@ pub fn surface(theme: &Theme) -> container::Style {
         text_color: Some(to_color(theme.colors.foreground)),
         border: Border {
             color: border_color(theme),
-            width: 1.0,
-            radius: 4.0.into(),
+            width: theme.style.border_width,
+            radius: theme.style.corner_radius.into(),
         },
+        shadow: glow_shadow(theme),
         ..container::Style::default()
+    }
+}
+
+/// Soft accent shadow for themes whose `[style]` requests a glow.
+fn glow_shadow(theme: &Theme) -> iced::Shadow {
+    if theme.style.glow <= 0.0 {
+        return iced::Shadow::default();
+    }
+    iced::Shadow {
+        color: Color {
+            a: 0.35 * theme.style.glow,
+            ..to_color(theme.colors.accent)
+        },
+        offset: iced::Vector::ZERO,
+        blur_radius: 12.0 * theme.style.glow,
     }
 }
 
@@ -48,8 +64,8 @@ pub fn dialog(theme: &Theme) -> container::Style {
     container::Style {
         border: Border {
             color: to_color(theme.colors.accent),
-            width: 1.0,
-            radius: 6.0.into(),
+            width: theme.style.border_width.max(1.0),
+            radius: (theme.style.corner_radius + 2.0).into(),
         },
         ..surface(theme)
     }

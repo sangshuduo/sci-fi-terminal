@@ -6,6 +6,7 @@ use std::path::Path;
 use serde::Deserialize;
 
 use super::load::{ConfigError, MAX_CONFIG_BYTES, parse_error, read_limited};
+use super::style::ThemeStyle;
 use super::validate::{Diagnostic, is_safe_id, schema_version_diagnostic};
 
 /// Minimum contrast ratio for readable text (WCAG AA).
@@ -84,6 +85,7 @@ pub struct Theme {
     pub name: String,
     pub colors: UiColors,
     pub terminal: TerminalPalette,
+    pub style: ThemeStyle,
     pub builtin: bool,
 }
 
@@ -151,6 +153,8 @@ struct ThemeFile {
     name: String,
     colors: ColorsFile,
     terminal: TerminalFile,
+    #[serde(default)]
+    style: ThemeStyle,
 }
 
 #[derive(Deserialize)]
@@ -234,6 +238,7 @@ fn convert_theme(file: ThemeFile) -> Result<Theme, Vec<Diagnostic>> {
     }
     let colors = convert_colors(&file.colors, &mut rd);
     let terminal = convert_terminal(&file.terminal, &mut rd);
+    rd.0.extend(file.style.diagnostics());
     if !rd.0.is_empty() {
         return Err(rd.0);
     }
@@ -242,6 +247,7 @@ fn convert_theme(file: ThemeFile) -> Result<Theme, Vec<Diagnostic>> {
         name: file.name,
         colors,
         terminal,
+        style: file.style,
         builtin: false,
     })
 }
@@ -357,6 +363,7 @@ fn builtin(id: &str, name: &str, colors: [u32; 8], term: (u32, u32, [u32; 16])) 
             background: hex(term.1),
             ansi: ansi(term.2),
         },
+        style: ThemeStyle::for_builtin(id),
         builtin: true,
     }
 }

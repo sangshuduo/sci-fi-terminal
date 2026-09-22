@@ -20,9 +20,11 @@ use super::state::Tab;
 use crate::config::{
     Config, ConfigPaths, Theme, builtin_themes, find_theme, load_effective, load_user_themes,
 };
-use crate::panels::{MetricsSample, MetricsWorker, PanelRegistry};
+use crate::osk::{Keyboard, Layout, OskMessage, builtin_layout, load_user_layouts};
+use crate::panels::{MonitorSample, MonitorWorker, PanelMsg, PanelRegistry};
 use crate::render::{CellMetrics, TerminalEvent};
 use crate::session::Notify;
+use crate::sound::{Cue, SoundPlayer, SoundSettings};
 
 /// Command-line options that affect startup.
 #[derive(Debug, Clone, Default)]
@@ -36,7 +38,7 @@ pub struct Options {
 #[derive(Debug, Clone)]
 pub enum AppEvent {
     Wake(SessionId),
-    Metrics(MetricsSample),
+    Monitor(Box<MonitorSample>),
 }
 
 struct EventNotify(UnboundedSender<AppEvent>);
@@ -58,6 +60,8 @@ pub enum Message {
     SelectTab(usize),
     CloseTab(usize),
     Run(Action),
+    Panel(PanelMsg),
+    Osk(OskMessage),
     Palette(PaletteMsg),
     Settings(SettingsMsg),
     SearchQuery(String),
@@ -100,8 +104,12 @@ pub struct App {
     pub(super) notify: Arc<dyn Notify>,
     pub(super) panels: PanelRegistry,
     pub(super) panel_visible: bool,
-    pub(super) metrics: Option<MetricsWorker>,
-    pub(super) last_metrics: Option<MetricsSample>,
+    pub(super) monitor_worker: Option<MonitorWorker>,
+    pub(super) monitor: MonitorSample,
+    pub(super) sound: SoundPlayer,
+    pub(super) layouts: Vec<Layout>,
+    pub(super) keyboard: Option<Keyboard>,
+    pub(super) followed_pid: Option<u32>,
     pub(super) palette: Option<Palette>,
     pub(super) settings: Option<Settings>,
     pub(super) search: Option<SearchBar>,
@@ -141,6 +149,12 @@ impl App {
             config.appearance.line_height,
         );
         let panel_visible = config.panels.metrics.enabled;
+        let layouts = collect_layouts(paths.as_ref(), options.safe_mode, &mut notices);
+        let keyboard = config
+            .keyboard
+            .on_screen
+            .then(|| keyboard_for(&layouts, &config.keyboard.layout));
+        let sound = SoundPlayer::new(sound_settings(&config));
         let mut app = Self {
             paths,
             options,
@@ -158,8 +172,12 @@ impl App {
             events: sender,
             panels: PanelRegistry::builtin(),
             panel_visible,
-            metrics: None,
-            last_metrics: None,
+            monitor_worker: None,
+            monitor: MonitorSample::default(),
+            sound,
+            layouts,
+            keyboard,
+            followed_pid: None,
             palette: None,
             settings: None,
             search: None,
@@ -204,12 +222,35 @@ impl App {
     }
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
+        let task = self.dispatch(message);
+        // The directory viewer follows the focused shell; retarget on any focus change.
+        let pid = self.focused_pid();
+        if pid != self.followed_pid {
+            self.followed_pid = pid;
+            self.sync_metrics_worker();
+        }
+        task
+    }
+
+    pub(super) fn focused_pid(&self) -> Option<u32> {
+        self.active_tab()
+            .and_then(Tab::focused)
+            .and_then(|pane| pane.session.as_ref())
+            .and_then(|session| session.pid())
+    }
+
+    fn dispatch(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::Event(AppEvent::Wake(id)) => self.on_wake(id),
-            Message::Event(AppEvent::Metrics(sample)) => {
-                self.last_metrics = Some(sample);
+            Message::Event(AppEvent::Monitor(sample)) => {
+                self.monitor = *sample;
                 Task::none()
             }
+            Message::Panel(PanelMsg::Files(crate::panels::FilesMsg::InsertCd(path))) => {
+                self.insert_cd(&path);
+                Task::none()
+            }
+            Message::Osk(message) => self.on_osk(message),
             Message::Key(press) => self.on_key(press),
             Message::Terminal(pane, event) => self.on_terminal(pane, event),
             Message::PaneClicked(pane) => {
@@ -359,6 +400,54 @@ impl App {
 
     pub(super) fn palette_task(&self) -> Task<Message> {
         iced::widget::operation::focus(Palette::input_id())
+    }
+}
+
+/// Built-in on-screen keyboard layout plus user layouts from `keyboards/`.
+fn collect_layouts(
+    paths: Option<&ConfigPaths>,
+    safe_mode: bool,
+    notices: &mut Vec<String>,
+) -> Vec<Layout> {
+    let mut layouts = vec![builtin_layout()];
+    if let (Some(paths), false) = (paths, safe_mode) {
+        let (user, errors) = load_user_layouts(&paths.config_dir.join("keyboards"));
+        notices.extend(errors.iter().map(ToString::to_string));
+        layouts.extend(user.into_iter().filter(|l| l.id != "en-us"));
+    }
+    layouts
+}
+
+/// UI chrome font from the theme's `[style] ui_font`; empty means the default.
+pub(super) fn font_for_ui(family: &str) -> Font {
+    if family.trim().is_empty() {
+        Font::DEFAULT
+    } else {
+        font_for(family)
+    }
+}
+
+pub(super) fn keyboard_for(layouts: &[Layout], id: &str) -> Keyboard {
+    let layout = layouts
+        .iter()
+        .find(|l| l.id == id)
+        .cloned()
+        .unwrap_or_else(builtin_layout);
+    Keyboard::new(layout)
+}
+
+pub(super) fn sound_settings(config: &Config) -> SoundSettings {
+    SoundSettings {
+        enabled: config.sound.enabled,
+        volume: config.sound.volume,
+        keypress: config.sound.keypress,
+    }
+}
+
+impl App {
+    /// Play a cue if sound is enabled; never blocks.
+    pub(super) fn play(&mut self, cue: Cue) {
+        self.sound.play(cue);
     }
 }
 

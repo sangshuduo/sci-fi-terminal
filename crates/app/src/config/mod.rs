@@ -2,6 +2,7 @@
 
 pub mod load;
 pub mod schema;
+pub mod style;
 pub mod theme;
 pub mod validate;
 
@@ -13,6 +14,7 @@ pub use load::{
     parse_config, save_overrides, write_atomic,
 };
 pub use schema::*;
+pub use style::ThemeStyle;
 pub use theme::{
     Rgb, TerminalPalette, Theme, UiColors, builtin_themes, contrast_ratio, find_theme,
     load_user_themes, parse_theme,

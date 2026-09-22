@@ -12,11 +12,11 @@ use super::palette;
 use super::settings;
 use super::state::{PaneState, Tab};
 use super::style;
-use crate::panels::PanelContext;
+use crate::panels::{BuiltinPanel, PanelContext};
 use crate::render::TerminalView;
 
 pub const SEARCH_ID: &str = "search-input";
-const PANEL_WIDTH: f32 = 240.0;
+pub const PANEL_WIDTH: f32 = 280.0;
 const PREVIEW_LINES: usize = 12;
 
 impl App {
@@ -27,6 +27,7 @@ impl App {
             .height(Length::Fill);
         let base = column![self.tab_bar(), body]
             .extend(self.search_view())
+            .extend(self.keyboard_view())
             .push(self.status_bar())
             .spacing(4)
             .padding(4);
@@ -59,9 +60,14 @@ impl App {
                     .style(button::text)
                     .on_press(Message::CloseTab(index));
                 let tab_button = button(
-                    row![text(label).size(13), close]
-                        .spacing(6)
-                        .align_y(iced::Alignment::Center),
+                    row![
+                        text(label)
+                            .size(13)
+                            .font(super::app::font_for_ui(&self.theme.style.ui_font)),
+                        close
+                    ]
+                    .spacing(6)
+                    .align_y(iced::Alignment::Center),
                 )
                 .padding([3, 10])
                 .style(style::tab(&self.theme, active))
@@ -145,12 +151,14 @@ impl App {
             },
             overlay: state.overlay(),
             on_event: Box::new(move |event| Message::Terminal(pane, event)),
+            touch_scroll: self.config.input.touch_scroll,
+            glow: self.theme.style.glow,
         };
         canvas(view).width(Length::Fill).height(Length::Fill).into()
     }
 
     fn panel_view(&self) -> Option<Element<'_, Message>> {
-        if !self.panel_visible || !self.config.panels.metrics.enabled {
+        if !self.panel_visible {
             return None;
         }
         let live = self
@@ -160,21 +168,48 @@ impl App {
             .filter(|(_, p)| p.is_live())
             .count();
         let context = PanelContext {
-            metrics: self.last_metrics.as_ref(),
+            sample: &self.monitor,
             session_count: self.session_count(),
             live_sessions: live,
         };
+        let ui_font = super::app::font_for_ui(&self.theme.style.ui_font);
         let sections = self
             .panels
             .iter()
+            .filter(|panel| self.panel_enabled(*panel))
             .fold(column![].spacing(16), |col, panel| {
-                col.push(column![text(panel.title()).size(15), panel.view(&context)].spacing(8))
+                let title = text(panel.title()).size(15).font(ui_font);
+                col.push(column![title, panel.view(&context, Message::Panel)].spacing(8))
             });
         Some(
-            container(scrollable(sections))
-                .padding(10)
-                .width(PANEL_WIDTH)
-                .height(Length::Fill)
+            container(scrollable(
+                container(sections).padding(iced::Padding::ZERO.right(12)),
+            ))
+            .padding(10)
+            .width(PANEL_WIDTH)
+            .height(Length::Fill)
+            .style(|_| style::surface(&self.theme))
+            .into(),
+        )
+    }
+
+    fn panel_enabled(&self, panel: BuiltinPanel) -> bool {
+        let panels = &self.config.panels;
+        match panel {
+            BuiltinPanel::System => panels.metrics.enabled,
+            BuiltinPanel::Processes => panels.processes.enabled,
+            BuiltinPanel::Network => panels.network.enabled,
+            BuiltinPanel::Files => panels.files.enabled,
+            BuiltinPanel::Sessions => true,
+        }
+    }
+
+    fn keyboard_view(&self) -> Option<Element<'_, Message>> {
+        let keyboard = self.keyboard.as_ref()?;
+        Some(
+            container(crate::osk::view(keyboard, Message::Osk))
+                .padding(6)
+                .width(Length::Fill)
                 .style(|_| style::surface(&self.theme))
                 .into(),
         )

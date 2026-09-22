@@ -14,10 +14,11 @@ use super::palette::Palette;
 use super::settings::{Settings, overrides_toml};
 use super::state::{PaneState, Tab, splits};
 use crate::config::{Config, DEFAULT_PROFILE_ID, LayoutPreset, write_atomic};
-use crate::panels::MetricsWorker;
 use crate::panels::metrics::BACKGROUND_INTERVAL;
+use crate::panels::{MonitorPlan, MonitorSample, MonitorWorker};
 use crate::render::CellMetrics;
 use crate::session::{SessionCommand, SessionConfig, spawn_session};
+use crate::sound::Cue;
 
 /// Initial window size in logical pixels; `main.rs` opens the window at this size.
 pub const INITIAL_WINDOW: (f32, f32) = (1100.0, 700.0);
@@ -38,6 +39,11 @@ impl App {
     /// Create a pane with a fresh session. Failures are kept and shown in the pane.
     pub(super) fn spawn_pane(&mut self, profile_id: &str) -> PaneState {
         let session = self.start_session(profile_id);
+        self.play(if session.is_ok() {
+            Cue::SessionStart
+        } else {
+            Cue::Error
+        });
         PaneState::new(profile_id.to_owned(), session)
     }
 
@@ -48,7 +54,11 @@ impl App {
             .active_tab()
             .and_then(Tab::focused)
             .and_then(|p| p.pixel_size);
-        let panel = if self.panel_visible { 248.0 } else { 0.0 };
+        let panel = if self.panel_visible {
+            super::view::PANEL_WIDTH + 8.0
+        } else {
+            0.0
+        };
         let (width, height) = focused.map_or(
             (INITIAL_WINDOW.0 - panel - 16.0, INITIAL_WINDOW.1 - 80.0),
             |size| (size.width, size.height),
@@ -203,11 +213,37 @@ impl App {
             Action::ToggleMetrics => {
                 self.panel_visible = !self.panel_visible;
                 self.sync_metrics_worker();
+                self.play(if self.panel_visible {
+                    Cue::PanelOpen
+                } else {
+                    Cue::PanelClose
+                });
             }
             Action::ResetLayout => self.reset_layout(),
             Action::FontIncrease => self.adjust_font(1.0),
             Action::FontDecrease => self.adjust_font(-1.0),
             Action::FontReset => self.adjust_font(0.0),
+            Action::ToggleKeyboard => {
+                self.keyboard = match self.keyboard {
+                    Some(_) => None,
+                    None => Some(super::app::keyboard_for(
+                        &self.layouts,
+                        &self.config.keyboard.layout,
+                    )),
+                };
+                let cue = if self.keyboard.is_some() {
+                    Cue::PanelOpen
+                } else {
+                    Cue::PanelClose
+                };
+                self.play(cue);
+            }
+            Action::ToggleSound => {
+                let mut config = self.config.clone();
+                config.sound.enabled = !config.sound.enabled;
+                self.apply_config(config);
+                self.play(Cue::PanelOpen);
+            }
         }
         Task::none()
     }
@@ -363,34 +399,88 @@ impl App {
     /// Save layout, request teardown of every session and exit. Never joins workers.
     pub(super) fn exit(&mut self) -> Task<Message> {
         self.save_layout();
-        self.metrics = None;
+        self.monitor_worker = None;
         self.tabs.clear();
         iced::exit()
     }
 
+    /// What the visible panels need sampled; everything else stays off.
+    fn monitor_plan(&self) -> MonitorPlan {
+        let panels = &self.config.panels;
+        let visible = self.panel_visible;
+        let focused = Duration::from_millis(panels.metrics.interval_ms);
+        let interval = if self.window_focused {
+            focused
+        } else {
+            BACKGROUND_INTERVAL.max(focused)
+        };
+        let network_every = Duration::from_millis(panels.network.interval_ms).max(interval);
+        let geoip = panels.network.geoip_database.trim();
+        let files_pid = self.focused_pid();
+        MonitorPlan {
+            interval,
+            system: visible && panels.metrics.enabled,
+            processes: (visible && panels.processes.enabled)
+                .then_some(usize::from(panels.processes.count)),
+            network: (visible && panels.network.enabled).then_some(network_every),
+            connections: panels.network.connections,
+            geoip_database: (!geoip.is_empty()).then(|| std::path::PathBuf::from(geoip)),
+            files_pid: if visible && panels.files.enabled {
+                files_pid
+            } else {
+                None
+            },
+            show_hidden: panels.files.show_hidden,
+        }
+    }
+
+    /// Start, retarget or stop the monitor worker to match what is visible.
     pub(super) fn sync_metrics_worker(&mut self) {
-        let wanted = self.panel_visible && self.config.panels.metrics.enabled;
-        if !wanted {
-            self.metrics = None;
-            self.last_metrics = None;
+        let plan = self.monitor_plan();
+        if plan.is_idle() {
+            self.monitor_worker = None;
+            self.monitor = MonitorSample::default();
             return;
         }
-        let interval = if self.window_focused {
-            Duration::from_millis(self.config.panels.metrics.interval_ms)
-        } else {
-            BACKGROUND_INTERVAL.max(Duration::from_millis(
-                self.config.panels.metrics.interval_ms,
-            ))
-        };
-        match &self.metrics {
-            Some(worker) => worker.set_interval(interval),
+        match &self.monitor_worker {
+            Some(worker) => worker.set_plan(plan),
             None => {
                 let events = self.events.clone();
                 let sink = std::sync::Arc::new(move |sample| {
-                    let _ = events.unbounded_send(AppEvent::Metrics(sample));
+                    let _ = events.unbounded_send(AppEvent::Monitor(Box::new(sample)));
                 });
-                self.metrics = MetricsWorker::start(interval, sink);
+                self.monitor_worker = MonitorWorker::start(plan, sink);
             }
+        }
+    }
+
+    /// Type a quoted `cd` into the focused terminal without pressing Enter.
+    pub(super) fn insert_cd(&mut self, path: &std::path::Path) {
+        let command = crate::panels::files::cd_command(path);
+        let mut failed = false;
+        self.for_focused(|pane| {
+            if let Some(session) = &pane.session {
+                failed = session
+                    .write(command.as_bytes(), crate::session::InputKind::Typed)
+                    .is_err();
+            }
+        });
+        if failed {
+            self.notices
+                .push("The terminal did not accept the cd command.".into());
+        }
+    }
+
+    /// On-screen keyboard presses go through the same routing as physical keys.
+    pub(super) fn on_osk(&mut self, message: crate::osk::OskMessage) -> Task<Message> {
+        let crate::osk::OskMessage::Press(row, col) = message;
+        match self
+            .keyboard
+            .as_mut()
+            .and_then(|keyboard| keyboard.press(row, col))
+        {
+            Some(press) => self.on_key(press),
+            None => Task::none(),
         }
     }
 
@@ -430,6 +520,19 @@ impl App {
         self.keymap = Keymap::build(&config.keybindings, cfg!(target_os = "macos"));
         self.notices.extend(self.keymap.diagnostics.iter().cloned());
         self.apply_appearance(&config);
+        self.sound.set_settings(super::app::sound_settings(&config));
+        if config.keyboard.layout != self.config.keyboard.layout && self.keyboard.is_some() {
+            self.keyboard = Some(super::app::keyboard_for(
+                &self.layouts,
+                &config.keyboard.layout,
+            ));
+        }
+        if config.keyboard.on_screen != self.config.keyboard.on_screen {
+            self.keyboard = config
+                .keyboard
+                .on_screen
+                .then(|| super::app::keyboard_for(&self.layouts, &config.keyboard.layout));
+        }
         self.config = config;
         self.sync_metrics_worker();
     }

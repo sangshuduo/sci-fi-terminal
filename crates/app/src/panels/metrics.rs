@@ -1,12 +1,5 @@
-//! Local CPU/memory sampling on a low-rate worker thread.
-//!
-//! Sampling runs only while the panel is enabled and visible: once per
-//! interval (≥ 1 s) in the foreground and at most every 5 s in the
-//! background. No process scans, no shelling out, no network.
+//! CPU, memory and swap samples.
 
-use std::sync::Arc;
-use std::sync::mpsc::{RecvTimeoutError, Sender, channel};
-use std::thread::JoinHandle;
 use std::time::Duration;
 
 use sysinfo::{CpuRefreshKind, MemoryRefreshKind, RefreshKind, System};
@@ -60,91 +53,39 @@ pub fn format_bytes(bytes: u64) -> String {
     }
 }
 
-enum Control {
-    Interval(Duration),
-    Stop,
+/// CPU and memory only; no process table.
+pub(crate) struct SystemSampler {
+    system: System,
+    refresh: RefreshKind,
 }
 
-/// Owns the sampling thread; dropping it stops sampling promptly.
-pub struct MetricsWorker {
-    control: Sender<Control>,
-    thread: Option<JoinHandle<()>>,
-}
-
-impl MetricsWorker {
-    pub fn start(
-        interval: Duration,
-        sink: Arc<dyn Fn(MetricsSample) + Send + Sync>,
-    ) -> Option<Self> {
-        let (control, rx) = channel();
-        let thread = std::thread::Builder::new()
-            .name("metrics".into())
-            .stack_size(128 * 1024)
-            .spawn(move || run(interval.max(MIN_INTERVAL), &rx, sink.as_ref()))
-            .ok()?;
-        Some(Self {
-            control,
-            thread: Some(thread),
-        })
-    }
-
-    /// Change the sampling interval (e.g. slower while the window is unfocused).
-    pub fn set_interval(&self, interval: Duration) {
-        let _ = self
-            .control
-            .send(Control::Interval(interval.max(MIN_INTERVAL)));
-    }
-}
-
-impl Drop for MetricsWorker {
-    fn drop(&mut self) {
-        let _ = self.control.send(Control::Stop);
-        // The worker wakes immediately on Stop, so this join is bounded.
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
+impl SystemSampler {
+    pub(crate) fn new() -> Self {
+        let refresh = RefreshKind::nothing()
+            .with_cpu(CpuRefreshKind::nothing().with_cpu_usage())
+            .with_memory(MemoryRefreshKind::everything());
+        Self {
+            system: System::new_with_specifics(refresh),
+            refresh,
         }
     }
-}
 
-fn run(
-    mut interval: Duration,
-    control: &std::sync::mpsc::Receiver<Control>,
-    sink: &dyn Fn(MetricsSample),
-) {
-    let refresh = RefreshKind::nothing()
-        .with_cpu(CpuRefreshKind::nothing().with_cpu_usage())
-        .with_memory(MemoryRefreshKind::everything());
-    let mut system = System::new_with_specifics(refresh);
-    loop {
-        match control.recv_timeout(interval) {
-            Ok(Control::Interval(next)) => {
-                interval = next;
-                continue;
-            }
-            Ok(Control::Stop) | Err(RecvTimeoutError::Disconnected) => return,
-            Err(RecvTimeoutError::Timeout) => {}
+    pub(crate) fn sample(&mut self) -> MetricsSample {
+        self.system.refresh_specifics(self.refresh);
+        let system = &self.system;
+        MetricsSample {
+            cpu_percent: system.global_cpu_usage(),
+            per_core: system.cpus().iter().map(sysinfo::Cpu::cpu_usage).collect(),
+            memory_used: system.used_memory(),
+            memory_total: system.total_memory(),
+            swap_used: system.used_swap(),
+            swap_total: system.total_swap(),
         }
-        system.refresh_specifics(refresh);
-        sink(sample(&system));
-    }
-}
-
-fn sample(system: &System) -> MetricsSample {
-    MetricsSample {
-        cpu_percent: system.global_cpu_usage(),
-        per_core: system.cpus().iter().map(sysinfo::Cpu::cpu_usage).collect(),
-        memory_used: system.used_memory(),
-        memory_total: system.total_memory(),
-        swap_used: system.used_swap(),
-        swap_total: system.total_swap(),
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
-    use std::time::Instant;
-
     use super::*;
 
     #[test]
@@ -168,22 +109,7 @@ mod tests {
     }
 
     #[test]
-    fn worker_samples_and_stops_promptly() {
-        let samples = Arc::new(Mutex::new(Vec::new()));
-        let sink = {
-            let samples = samples.clone();
-            Arc::new(move |s: MetricsSample| samples.lock().expect("lock").push(s))
-        };
-        let worker = MetricsWorker::start(MIN_INTERVAL, sink).expect("start");
-        let deadline = Instant::now() + Duration::from_secs(5);
-        while samples.lock().expect("lock").is_empty() {
-            assert!(Instant::now() < deadline, "no sample produced");
-            std::thread::sleep(Duration::from_millis(50));
-        }
-        let stopping = Instant::now();
-        drop(worker);
-        assert!(stopping.elapsed() < Duration::from_millis(500));
-        let sample = samples.lock().expect("lock")[0].clone();
-        assert!(sample.memory_total > 0);
+    fn system_sample_reports_memory() {
+        assert!(SystemSampler::new().sample().memory_total > 0);
     }
 }

@@ -32,6 +32,8 @@ fn every_action_is_registered_once() {
         Action::FontIncrease,
         Action::FontDecrease,
         Action::FontReset,
+        Action::ToggleKeyboard,
+        Action::ToggleSound,
     ];
     assert_eq!(all.len(), ACTIONS.len());
     for action in all {

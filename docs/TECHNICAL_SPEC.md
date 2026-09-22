@@ -6,7 +6,17 @@ Build a local desktop application whose central experience is a terminal, with o
 
 MVP includes one window; tabs and binary splits; at most eight live sessions and four visible terminal panes; working local shells; selection/copy/paste/search; font and palette settings; three original themes; settings UI; keybinding editor; layout persistence; a CPU/memory panel; reduced motion; and reliable close/error behavior. It must run on all three target OS families. Detailed compatibility tests live in [TERMINAL](TERMINAL.md) and [TESTING](TESTING.md).
 
-Exclude from MVP: multiwindow, arbitrary docking, remote-session management, embedded SSH credentials, terminal image protocols, downloadable shaders, plugin marketplace, automatic updates, session-process resurrection, shell command recording, network maps, virtual keyboard, and ambient audio. Users can run their existing `ssh` CLI inside a terminal. Rich workflows mean responsive split sessions and optional lightweight effects, not a full desktop simulation.
+Exclude from MVP: multiwindow, arbitrary docking, remote-session management, embedded SSH credentials, terminal image protocols, downloadable shaders, plugin marketplace, automatic updates, session-process resurrection, shell command recording, geographic network maps, and ambient (looping) audio. Users can run their existing `ssh` CLI inside a terminal. Rich workflows mean responsive split sessions and optional lightweight effects, not a full desktop simulation.
+
+### Workspace extensions (ADR-005)
+
+Added to scope by [ADR-005](DECISIONS.md#adr-005-workspace-extensions-monitoring-touch-directory-viewer-sound-and-theme-styling). Each is optional, independently toggleable, and off the GUI thread:
+
+- **Process and network monitor.** A process panel shows the top processes by CPU usage, with name, PID, CPU and memory only. It never collects command lines or environment variables. A network panel shows per-interface transfer rates and up to 200 active sockets. It samples only while visible, at least every 1 s for processes and every 2 s for the network. GeoIP is **offline and opt-in**: the user points `panels.network.geoip_database` at a local MaxMind-format `.mmdb` file. The app never downloads a database and never sends an address anywhere. Only public addresses are looked up.
+- **Directory viewer.** A panel that follows the working directory of the focused shell process, read from the OS process table on a background worker. Listings are read-only and capped (500 entries). Browsing never runs a command or opens a file. The one terminal-affecting action, "Insert `cd`", types a quoted `cd -- '<path>'` into the prompt *without* pressing Enter. The user presses Enter themselves, so nothing is injected silently.
+- **Touch and on-screen keyboard.** One-finger drag scrolls, and a tap focuses a pane. An optional on-screen keyboard emits the same key events as a physical keyboard, so routing, shortcuts and encoding are unchanged. Layouts are data-only TOML files (`keyboards/<id>.toml`, ≤ 120 keys) with sticky one-shot modifiers.
+- **Sound effects.** Short cues (keypress, bell, panel, session start/exit, error) synthesised in code from original parameters. No audio assets are shipped. Off by default, with volume and a separate typing-tick toggle. Rate-limited: at most 4 overlapping cues, keypress ticks at most every 30 ms. Playback never blocks the GUI thread. Reduced motion does not enable sound.
+- **Theme styling.** Themes may carry an optional `[style]` table (corner radius, border width, static edge glow, UI font family). This is the data-only replacement for stylesheet injection. Themes still cannot supply code, shaders, URLs or file imports.
 
 ## Architecture and ownership
 

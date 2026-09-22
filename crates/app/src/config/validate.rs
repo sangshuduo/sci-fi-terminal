@@ -80,6 +80,7 @@ pub fn validate(config: &Config) -> Vec<Diagnostic> {
     validate_appearance(config, &mut out);
     validate_terminal(config, &mut out);
     validate_layout_panels_effects(config, &mut out);
+    validate_extensions(config, &mut out);
     validate_profiles(config, &mut out);
     for (i, binding) in config.keybindings.iter().enumerate() {
         validate_keybinding(i, binding, &mut out);
@@ -167,6 +168,39 @@ fn validate_layout_panels_effects(config: &Config, out: &mut Vec<Diagnostic>) {
         1,
         60,
     );
+}
+
+/// Monitoring, sound and keyboard sections added by ADR-005.
+fn validate_extensions(config: &Config, out: &mut Vec<Diagnostic>) {
+    let panels = &config.panels;
+    check_int(
+        out,
+        "panels.processes.count",
+        u64::from(panels.processes.count),
+        1,
+        10,
+    );
+    let interval = panels.network.interval_ms;
+    if interval < 1000 {
+        out.push(Diagnostic::new(
+            "panels.network.interval_ms",
+            format!("{interval} must be at least 1000"),
+        ));
+    }
+    let geoip = &panels.network.geoip_database;
+    if geoip.contains('\0') || geoip.contains("://") {
+        out.push(Diagnostic::new(
+            "panels.network.geoip_database",
+            "must be a local file path (URLs are not supported; nothing is downloaded)",
+        ));
+    }
+    check_f32(out, "sound.volume", config.sound.volume, 0.0, 1.0);
+    if !is_safe_id(&config.keyboard.layout) {
+        out.push(Diagnostic::new(
+            "keyboard.layout",
+            "layout id must be 1-64 characters of [a-z0-9_-]",
+        ));
+    }
 }
 
 fn validate_profiles(config: &Config, out: &mut Vec<Diagnostic>) {

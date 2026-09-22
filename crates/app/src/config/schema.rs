@@ -29,6 +29,12 @@ pub struct Config {
     #[serde(default)]
     pub effects: Effects,
     #[serde(default)]
+    pub sound: SoundSettingsConfig,
+    #[serde(default)]
+    pub input: InputSettings,
+    #[serde(default)]
+    pub keyboard: KeyboardSettings,
+    #[serde(default)]
     pub keybindings: Vec<KeyBinding>,
 }
 
@@ -44,6 +50,9 @@ impl Default for Config {
             layout: LayoutSettings::default(),
             panels: Panels::default(),
             effects: Effects::default(),
+            sound: SoundSettingsConfig::default(),
+            input: InputSettings::default(),
+            keyboard: KeyboardSettings::default(),
             keybindings: Vec::new(),
         }
     }
@@ -158,6 +167,120 @@ pub enum LayoutPreset {
 #[serde(default, deny_unknown_fields)]
 pub struct Panels {
     pub metrics: MetricsPanelSettings,
+    pub processes: ProcessesPanelSettings,
+    pub network: NetworkPanelSettings,
+    pub files: FilesPanelSettings,
+}
+
+/// Top-process list (CPU/memory only; never command lines or environment).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ProcessesPanelSettings {
+    pub enabled: bool,
+    pub count: u8,
+}
+
+impl Default for ProcessesPanelSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            count: 6,
+        }
+    }
+}
+
+/// Interface transfer rates and active connections.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct NetworkPanelSettings {
+    pub enabled: bool,
+    pub interval_ms: u64,
+    pub connections: bool,
+    /// Local MaxMind-format `.mmdb` file. Empty disables GeoIP. Never downloaded.
+    pub geoip_database: String,
+}
+
+impl Default for NetworkPanelSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            interval_ms: 2000,
+            connections: true,
+            geoip_database: String::new(),
+        }
+    }
+}
+
+/// Directory viewer that follows the focused shell's working directory.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct FilesPanelSettings {
+    pub enabled: bool,
+    pub show_hidden: bool,
+}
+
+impl Default for FilesPanelSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            show_hidden: false,
+        }
+    }
+}
+
+/// Optional synthesised sound effects; off by default.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct SoundSettingsConfig {
+    pub enabled: bool,
+    pub volume: f32,
+    pub keypress: bool,
+}
+
+impl Default for SoundSettingsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            volume: 0.4,
+            keypress: false,
+        }
+    }
+}
+
+/// Pointer, touch and modifier behaviour.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct InputSettings {
+    /// macOS: treat Option as Alt/Meta (ESC prefix) instead of a text modifier.
+    pub option_as_alt: bool,
+    /// One-finger drag scrolls the terminal on touch screens.
+    pub touch_scroll: bool,
+}
+
+impl Default for InputSettings {
+    fn default() -> Self {
+        Self {
+            option_as_alt: false,
+            touch_scroll: true,
+        }
+    }
+}
+
+/// On-screen keyboard for touch displays.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct KeyboardSettings {
+    pub on_screen: bool,
+    pub layout: String,
+}
+
+impl Default for KeyboardSettings {
+    fn default() -> Self {
+        Self {
+            on_screen: false,
+            layout: "en-us".into(),
+        }
+    }
 }
 
 /// System metrics panel settings.

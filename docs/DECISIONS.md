@@ -42,6 +42,36 @@ Direct Metal/D3D/Vulkan backends could optimize platform details but multiply co
 
 Dynamic native libraries expose unstable Rust ABI and process-wide trust. Subprocess protocols add IPC and packaging but isolate failures; WASM permits resource/capability control at the cost of runtime/host API complexity. Neither is needed for MVP. **Follow-up:** a versioned external protocol ADR before executable extensions; no speculative plugin SDK dependency now.
 
+## ADR-005: Workspace extensions (monitoring, touch, directory viewer, sound and theme styling)
+
+**Status:** accepted by the project owner, 2026-09-22. It amends the MVP exclusions in [TECHNICAL_SPEC](TECHNICAL_SPEC.md#workspace-extensions-adr-005).
+
+**Context:** the owner asked for a science-fiction workspace with these capabilities: real-time process and network monitoring (with GeoIP), touch displays with an on-screen keyboard, a directory viewer that follows the shell, deep theming, and optional sound effects. Only the *feature concepts* are taken as requirements. The clean-room boundary still applies to every layout, sound, asset and visual.
+
+**Decisions:**
+
+| Capability | Decision | Rejected alternatives |
+|---|---|---|
+| Processes | `sysinfo` process table, top N by CPU, name/PID/CPU/memory only | Shelling out to `ps`/`top` (spec forbids); collecting command lines (privacy) |
+| Interfaces | `sysinfo` network counters, rate = delta ÷ elapsed | Packet capture (privileges, scope) |
+| Connections | `netstat2` local socket tables (TCP/UDP, v4/v6), capped at 200 | `lsof`/`netstat` subprocesses; raw sockets |
+| GeoIP | `maxminddb` reading a **user-supplied offline** database, opt-in | Online lookup services (sends peer IPs to a third party); bundling a database (licence and update burden) |
+| Directory viewer | Process table cwd of the shell PID, polled only while visible; OSC 7 support deferred | Injecting shell hooks into user profiles |
+| Touch | Iced touch events: drag-to-scroll, tap-to-focus | Custom gesture engine |
+| On-screen keyboard | Built-in Iced widgets. TOML layouts emit ordinary key events | Arbitrary macro strings on keys (hidden command injection) |
+| Sound | `rodio` playback of samples synthesised at runtime; off by default | Shipping recorded assets; decoder features (not needed) |
+| Styling | Typed `[style]` tokens in theme TOML | CSS/stylesheet injection (no web layer, arbitrary code surface) |
+
+**Consequences:**
+- There are three more native-facing dependencies (`netstat2`, `maxminddb`, `rodio` and its audio backend), and each must be inventoried for notices before release.
+- Connection listing may need elevated rights for other users' sockets. The panel shows what the OS allows.
+- A process's working directory is not available on every OS for every process. The viewer states when it is unknown.
+
+**Follow-up:**
+- OSC 7 working-directory reports as a faster, more accurate source than the process table.
+- Accessibility review of the on-screen keyboard.
+- Audio-device loss handling.
+
 ## Proposed dependency budget
 
 | Dependency | Purpose | License posture / admission condition |
@@ -53,7 +83,10 @@ Dynamic native libraries expose unstable Rust ABI and process-wide trust. Subpro
 | glyphon / cosmic-text | Conditional grid text integration | MIT OR Apache-2.0 upstream; add directly only if existing stack cannot be reused |
 | serde + toml | Typed configuration | Validate exact release licenses and features before admission |
 | directories | OS config/cache locations | Optional small adapter dependency; use standard platform conventions |
-| sysinfo | CPU/memory snapshots | MIT upstream; no full process scans in default polling |
+| sysinfo | CPU/memory, process table, interface counters | MIT upstream; process sampling only while its panel is visible; never command lines or environment |
+| netstat2 | Local socket tables for the network panel | MIT OR Apache-2.0; read-only, capped results (ADR-005) |
+| maxminddb | Offline GeoIP lookups from a user-supplied `.mmdb` | ISC; no bundled database, no network (ADR-005) |
+| rodio | Playback of runtime-synthesised sound cues | MIT OR Apache-2.0; `playback` feature only, no decoders (ADR-005) |
 | tracing | Bounded diagnostic events | No terminal-content logging, no network sink |
 | thiserror | Typed library errors | Optional; do not add overlapping error frameworks |
 | proptest / criterion / cargo-fuzz | Test/benchmark tooling | Development-only, admitted when harnesses are implemented |

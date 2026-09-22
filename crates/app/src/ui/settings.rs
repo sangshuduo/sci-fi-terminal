@@ -17,17 +17,25 @@ pub enum Category {
     Appearance,
     Terminal,
     Panels,
+    InputSound,
     Keys,
 }
 
 impl Category {
-    const ALL: [Category; 4] = [Self::Appearance, Self::Terminal, Self::Panels, Self::Keys];
+    const ALL: [Category; 5] = [
+        Self::Appearance,
+        Self::Terminal,
+        Self::Panels,
+        Self::InputSound,
+        Self::Keys,
+    ];
 
     fn label(self) -> &'static str {
         match self {
             Self::Appearance => "Appearance",
             Self::Terminal => "Terminal",
             Self::Panels => "Panels & effects",
+            Self::InputSound => "Input, touch & sound",
             Self::Keys => "Keyboard shortcuts",
         }
     }
@@ -49,6 +57,18 @@ pub enum SettingsMsg {
     CopyOnSelect(bool),
     Scrollback(String),
     Metrics(bool),
+    Processes(bool),
+    Network(bool),
+    Connections(bool),
+    GeoIpPath(String),
+    Files(bool),
+    ShowHidden(bool),
+    Sound(bool),
+    Volume(f32),
+    TypingSound(bool),
+    OptionAsAlt(bool),
+    TouchScroll(bool),
+    OnScreenKeyboard(bool),
     Key(Action, String),
     ResetSection,
     ResetAll,
@@ -127,6 +147,27 @@ impl Settings {
                 self.reset_keys_to_defaults();
             }
             SettingsMsg::Apply | SettingsMsg::Cancel => {}
+            other => self.update_extension(other),
+        }
+    }
+
+    /// Workspace extensions from ADR-005: panels, sound, input and keyboard.
+    fn update_extension(&mut self, message: SettingsMsg) {
+        let draft = &mut self.draft;
+        match message {
+            SettingsMsg::Processes(on) => draft.panels.processes.enabled = on,
+            SettingsMsg::Network(on) => draft.panels.network.enabled = on,
+            SettingsMsg::Connections(on) => draft.panels.network.connections = on,
+            SettingsMsg::GeoIpPath(path) => draft.panels.network.geoip_database = path,
+            SettingsMsg::Files(on) => draft.panels.files.enabled = on,
+            SettingsMsg::ShowHidden(on) => draft.panels.files.show_hidden = on,
+            SettingsMsg::Sound(on) => draft.sound.enabled = on,
+            SettingsMsg::Volume(volume) => draft.sound.volume = (volume * 20.0).round() / 20.0,
+            SettingsMsg::TypingSound(on) => draft.sound.keypress = on,
+            SettingsMsg::OptionAsAlt(on) => draft.input.option_as_alt = on,
+            SettingsMsg::TouchScroll(on) => draft.input.touch_scroll = on,
+            SettingsMsg::OnScreenKeyboard(on) => draft.keyboard.on_screen = on,
+            _ => {}
         }
     }
 
@@ -141,6 +182,11 @@ impl Settings {
             Category::Panels => {
                 self.draft.panels = defaults.panels;
                 self.draft.effects = defaults.effects;
+            }
+            Category::InputSound => {
+                self.draft.sound = defaults.sound;
+                self.draft.input = defaults.input;
+                self.draft.keyboard = defaults.keyboard;
             }
             Category::Keys => self.reset_keys_to_defaults(),
         }
@@ -338,6 +384,7 @@ fn section<'a, M: Clone + 'a>(
         Category::Appearance => appearance_rows(settings, themes, wrap),
         Category::Terminal => terminal_rows(settings, wrap),
         Category::Panels => panel_rows(settings, wrap),
+        Category::InputSound => input_sound_rows(settings, wrap),
         Category::Keys => key_rows(settings, wrap),
     };
     rows.into_iter()
@@ -478,7 +525,89 @@ fn panel_rows<'a, M: Clone + 'a>(
             })
             .into(),
         ),
+        toggle(
+            "Process panel",
+            settings.draft.panels.processes.enabled,
+            move |v| wrap(SettingsMsg::Processes(v)),
+        ),
+        toggle(
+            "Network panel",
+            settings.draft.panels.network.enabled,
+            move |v| wrap(SettingsMsg::Network(v)),
+        ),
+        toggle(
+            "Show connections",
+            settings.draft.panels.network.connections,
+            move |v| wrap(SettingsMsg::Connections(v)),
+        ),
+        (
+            "GeoIP database (.mmdb)",
+            text_input(
+                "Local file path; empty = off",
+                &settings.draft.panels.network.geoip_database,
+            )
+            .on_input(move |p| wrap(SettingsMsg::GeoIpPath(p)))
+            .width(280)
+            .into(),
+        ),
+        toggle(
+            "Directory panel",
+            settings.draft.panels.files.enabled,
+            move |v| wrap(SettingsMsg::Files(v)),
+        ),
+        toggle(
+            "Show hidden files",
+            settings.draft.panels.files.show_hidden,
+            move |v| wrap(SettingsMsg::ShowHidden(v)),
+        ),
     ]
+}
+
+fn input_sound_rows<'a, M: Clone + 'a>(
+    settings: &'a Settings,
+    wrap: impl Fn(SettingsMsg) -> M + Copy + 'a,
+) -> Rows<'a, M> {
+    let draft = &settings.draft;
+    vec![
+        toggle("Sound effects", draft.sound.enabled, move |v| {
+            wrap(SettingsMsg::Sound(v))
+        }),
+        (
+            "Volume",
+            row![
+                slider(0.0..=1.0, draft.sound.volume, move |v| wrap(
+                    SettingsMsg::Volume(v)
+                ))
+                .step(0.05_f32)
+                .width(180),
+                text(format!("{:.0}%", draft.sound.volume * 100.0)),
+            ]
+            .spacing(8)
+            .into(),
+        ),
+        toggle("Typing sounds", draft.sound.keypress, move |v| {
+            wrap(SettingsMsg::TypingSound(v))
+        }),
+        toggle(
+            "Option key as Alt (macOS)",
+            draft.input.option_as_alt,
+            move |v| wrap(SettingsMsg::OptionAsAlt(v)),
+        ),
+        toggle("Touch drag scrolls", draft.input.touch_scroll, move |v| {
+            wrap(SettingsMsg::TouchScroll(v))
+        }),
+        toggle("On-screen keyboard", draft.keyboard.on_screen, move |v| {
+            wrap(SettingsMsg::OnScreenKeyboard(v))
+        }),
+    ]
+}
+
+fn toggle<'a, M: Clone + 'a>(
+    label: &'static str,
+    value: bool,
+    on_toggle: impl Fn(bool) -> M + 'a,
+) -> (&'static str, Element<'a, M>) {
+    (label, checkbox(value).on_toggle(on_toggle).into())
 }
 
 fn key_rows<'a, M: Clone + 'a>(
