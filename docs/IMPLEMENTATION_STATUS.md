@@ -73,6 +73,10 @@ Status as of 2026-09-22, branch `feat/terminal-foundation`. This records what ex
 - **Theme styling** (`config/style.rs`)
   - An optional `[style]` table controls corner radius, border width, static glow and UI font. It is validated, rejects unknown keys, and has no code, URL or path surface.
   - Signal and Graphite ship with glow; High contrast uses square 2 px borders.
+- **Peer globe** (`render/globe.rs`, ADR-006)
+  - Orthographic wireframe globe built from the bundled public-domain Natural Earth coastlines (provenance recorded in `docs/provenance.csv`), with markers for GeoIP-located peers.
+  - Measured on an Apple Silicon Mac, release build, all monitoring panels visible (one-off readings, not a benchmark): about 3–4% CPU with the globe still, about 7% while it rotates. The first version cost about 11%. That dropped after coastline points were precomputed as unit vectors, each layer was drawn as a single path, and the tick was lowered to 20 Hz.
+  - Rotates at a 20 Hz tick only while it can be seen and `reduced_motion` is off. That setting defaults to on, so set `appearance.reduced_motion = false` to see it turn.
 - **Settings.** A new "Input, touch & sound" category, panel toggles, and a GeoIP path field. The config schema gains `[panels.processes|network|files]`, `[sound]`, `[input]` and `[keyboard]` sections.
 
 ## Known gaps (spec requirements not yet met)

@@ -198,6 +198,10 @@ pub struct NetworkPanelSettings {
     pub connections: bool,
     /// Local MaxMind-format `.mmdb` file. Empty disables GeoIP. Never downloaded.
     pub geoip_database: String,
+    /// Wireframe globe with peer markers (ADR-006).
+    pub globe: bool,
+    /// Rotate the globe (≤ 30 Hz) while visible; `appearance.reduced_motion` keeps it still.
+    pub globe_rotate: bool,
 }
 
 impl Default for NetworkPanelSettings {
@@ -207,6 +211,8 @@ impl Default for NetworkPanelSettings {
             interval_ms: 2000,
             connections: true,
             geoip_database: String::new(),
+            globe: true,
+            globe_rotate: true,
         }
     }
 }

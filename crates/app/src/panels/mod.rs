@@ -21,6 +21,8 @@ pub struct PanelContext<'a> {
     pub sample: &'a MonitorSample,
     pub session_count: usize,
     pub live_sessions: usize,
+    /// Globe drawing inputs for the network panel; `None` hides the globe.
+    pub globe: Option<crate::render::globe::GlobeView<'a>>,
 }
 
 /// Messages panels can emit.
@@ -89,7 +91,7 @@ impl BuiltinPanel {
         match self {
             Self::System => views::system(sample.system.as_ref()),
             Self::Processes => views::processes(&sample.processes),
-            Self::Network => views::network(sample),
+            Self::Network => views::network(sample, context.globe.as_ref()),
             Self::Files => match &sample.files {
                 Some(state) => files::view(state, move |m| wrap(PanelMsg::Files(m))),
                 None => views::placeholder("No focused shell"),
@@ -169,6 +171,7 @@ mod tests {
             sample: &sample,
             session_count: 2,
             live_sessions: 1,
+            globe: None,
         };
         for panel in PanelRegistry::builtin().iter() {
             let _element: Element<'_, PanelMsg> = panel.view(&context, |m| m);

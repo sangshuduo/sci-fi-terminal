@@ -72,6 +72,30 @@ Dynamic native libraries expose unstable Rust ABI and process-wide trust. Subpro
 - Accessibility review of the on-screen keyboard.
 - Audio-device loss handling.
 
+## ADR-006: Peer globe for the network panel
+
+**Status:** accepted by the project owner, 2026-09-22.
+
+**Context:** the owner wants GeoIP results shown on a rotating globe, as an idea seen in another product. The owner explicitly chose a clean-room implementation: the other product's source, assets and visual design were not consulted.
+
+**Decision:** draw an original wireframe globe on an Iced canvas in the network panel:
+- **Projection:** orthographic, with an 18° tilt, a 30° graticule, and coastlines from Natural Earth 1:110m. The coastlines are public domain, converted by `scripts/convert_coastline.py` into a 21 KB asset recorded in `docs/provenance.csv`.
+- **Markers:** peers located by the offline GeoIP database, deduplicated to a ~1° grid and capped at 64.
+- **Rotation:** 6°/s on a 20 Hz tick (within the 30 Hz ceiling). It runs only while the panel is visible, the window is focused, and `reduced_motion` is off. Otherwise the globe is static and faces the first peer.
+- **Redraw:** the canvas cache is cleared only on rotation ticks or marker changes. No timer exists while the globe is still.
+
+**Rejected alternatives:**
+
+| Alternative | Why rejected |
+|---|---|
+| Reading or porting the other product's globe | Violates the clean-room policy and is a GPL-3.0 licence risk |
+| A 3-D engine or textured sphere | Unneeded dependency and GPU budget |
+| Online tiles or maps | The app makes no network requests |
+
+**Consequences:**
+- Continuous redraws while rotating are an intentional, visible animation within the spec's 30 Hz ceiling, and they appear in idle CPU only when the user enables motion.
+- The asset adds 21 KB to the binary.
+
 ## Proposed dependency budget
 
 | Dependency | Purpose | License posture / admission condition |

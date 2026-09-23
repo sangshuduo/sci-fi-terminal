@@ -14,6 +14,7 @@ use super::state::{PaneState, Tab};
 use super::style;
 use crate::panels::{BuiltinPanel, PanelContext};
 use crate::render::TerminalView;
+use crate::render::globe::GlobeView;
 
 pub const SEARCH_ID: &str = "search-input";
 pub const PANEL_WIDTH: f32 = 280.0;
@@ -171,6 +172,11 @@ impl App {
             sample: &self.monitor,
             session_count: self.session_count(),
             live_sessions: live,
+            globe: self.config.panels.network.globe.then(|| GlobeView {
+                state: &self.globe,
+                markers: &self.globe_markers,
+                theme: &self.theme,
+            }),
         };
         let ui_font = super::app::font_for_ui(&self.theme.style.ui_font);
         let sections = self

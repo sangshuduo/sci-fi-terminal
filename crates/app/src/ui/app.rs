@@ -22,6 +22,7 @@ use crate::config::{
 };
 use crate::osk::{Keyboard, Layout, OskMessage, builtin_layout, load_user_layouts};
 use crate::panels::{MonitorSample, MonitorWorker, PanelMsg, PanelRegistry};
+use crate::render::globe::{GlobeState, Marker, markers_from};
 use crate::render::{CellMetrics, TerminalEvent};
 use crate::session::Notify;
 use crate::sound::{Cue, SoundPlayer, SoundSettings};
@@ -73,6 +74,7 @@ pub enum Message {
     WindowFocus(bool),
     CloseRequested(window::Id),
     DismissNotice,
+    GlobeTick(std::time::Instant),
 }
 
 /// A pending confirmation shown as a modal.
@@ -110,6 +112,9 @@ pub struct App {
     pub(super) layouts: Vec<Layout>,
     pub(super) keyboard: Option<Keyboard>,
     pub(super) followed_pid: Option<u32>,
+    pub(super) globe: GlobeState,
+    pub(super) globe_markers: Vec<Marker>,
+    pub(super) last_globe_tick: Option<std::time::Instant>,
     pub(super) palette: Option<Palette>,
     pub(super) settings: Option<Settings>,
     pub(super) search: Option<SearchBar>,
@@ -178,6 +183,9 @@ impl App {
             layouts,
             keyboard,
             followed_pid: None,
+            globe: GlobeState::default(),
+            globe_markers: Vec::new(),
+            last_globe_tick: None,
             palette: None,
             settings: None,
             search: None,
@@ -201,8 +209,29 @@ impl App {
         self.iced_theme.clone()
     }
 
-    /// Keyboard and window events. No timers: redraws are driven by damage only.
+    /// Keyboard and window events, plus a ≤ 30 Hz tick only while the globe
+    /// is visibly rotating. Terminal redraws are driven by damage only.
     pub fn subscription(&self) -> Subscription<Message> {
+        let globe = if self.globe_rotating() {
+            iced::time::every(GLOBE_FRAME).map(Message::GlobeTick)
+        } else {
+            Subscription::none()
+        };
+        Subscription::batch([Self::input_events(), globe])
+    }
+
+    /// Whether the globe should animate right now.
+    pub(super) fn globe_rotating(&self) -> bool {
+        let network = &self.config.panels.network;
+        self.panel_visible
+            && self.window_focused
+            && network.enabled
+            && network.globe
+            && network.globe_rotate
+            && !self.config.appearance.reduced_motion
+    }
+
+    fn input_events() -> Subscription<Message> {
         event::listen_with(|event, status, id| match event {
             Event::Keyboard(keyboard::Event::KeyPressed {
                 key,
@@ -244,6 +273,15 @@ impl App {
             Message::Event(AppEvent::Wake(id)) => self.on_wake(id),
             Message::Event(AppEvent::Monitor(sample)) => {
                 self.monitor = *sample;
+                self.refresh_globe_markers();
+                Task::none()
+            }
+            Message::GlobeTick(now) => {
+                let elapsed = self
+                    .last_globe_tick
+                    .map_or(0.0, |last| (now - last).as_secs_f32());
+                self.last_globe_tick = Some(now);
+                self.globe.advance(elapsed);
                 Task::none()
             }
             Message::Panel(PanelMsg::Files(crate::panels::FilesMsg::InsertCd(path))) => {
@@ -444,7 +482,33 @@ pub(super) fn sound_settings(config: &Config) -> SoundSettings {
     }
 }
 
+/// Globe frame interval: 20 Hz, under the spec's 30 Hz ceiling for optional
+/// animation; at 6°/s this is 0.3° per frame, visually smooth.
+const GLOBE_FRAME: std::time::Duration = std::time::Duration::from_millis(50);
+
 impl App {
+    /// Rebuild peer markers from the latest located connections. When the
+    /// globe is not rotating, turn it to face the first peer.
+    pub(super) fn refresh_globe_markers(&mut self) {
+        let located = match &self.monitor.connections {
+            Some(Ok(list)) => list
+                .iter()
+                .filter_map(|view| view.location.as_ref())
+                .filter_map(|loc| Some((loc.latitude?, loc.longitude?)))
+                .collect(),
+            _ => Vec::new(),
+        };
+        let markers = markers_from(located.into_iter());
+        if markers != self.globe_markers {
+            self.globe_markers = markers;
+            self.globe.cache.clear();
+        }
+        if !self.globe_rotating() {
+            self.last_globe_tick = None;
+            self.globe.face(self.globe_markers.first().copied());
+        }
+    }
+
     /// Play a cue if sound is enabled; never blocks.
     pub(super) fn play(&mut self, cue: Cue) {
         self.sound.play(cue);

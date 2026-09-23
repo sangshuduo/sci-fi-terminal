@@ -58,6 +58,8 @@ enabled = true
 interval_ms = 2000     # >= 1000
 connections = true
 geoip_database = ""    # local .mmdb path; empty = off; never downloaded
+globe = true           # wireframe globe with peer markers
+globe_rotate = true    # <= 30 Hz while visible; still when reduced_motion = true
 
 [panels.files]
 enabled = true

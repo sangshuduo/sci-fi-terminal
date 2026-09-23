@@ -1,7 +1,9 @@
 //! Read-only widget views for the monitoring panels.
 
-use iced::widget::{column, progress_bar, row, text};
+use iced::widget::{canvas, column, progress_bar, row, text};
 use iced::{Alignment, Element, Length};
+
+use crate::render::globe::GlobeView;
 
 use super::metrics::{MAX_CORES_SHOWN, MetricsSample, format_bytes};
 use super::worker::{ConnectionView, MonitorSample};
@@ -9,6 +11,8 @@ use crate::monitor::{ConnectionState, InterfaceRate, ProcessInfo, Protocol};
 
 /// Connections shown in the panel; the full capped list stays in the sample.
 const SHOWN_CONNECTIONS: usize = 12;
+/// Height of the globe canvas in logical pixels.
+const GLOBE_SIZE: f32 = 220.0;
 
 pub(super) fn placeholder<'a, M: 'a>(message: &'a str) -> Element<'a, M> {
     text(message).size(12).into()
@@ -84,7 +88,7 @@ pub(super) fn processes<'a, M: 'a>(list: &[ProcessInfo]) -> Element<'a, M> {
         .fold(column![header].spacing(2), |col, p| {
             col.push(row![
                 text(p.pid.to_string()).size(11).width(48),
-                text(p.name.clone()).size(11).width(Length::Fill),
+                text(short_name(&p.name)).size(11).width(Length::Fill),
                 text(format!("{:.0}%", p.cpu_percent)).size(11).width(44),
                 text(format_bytes(p.memory_bytes)).size(11).width(64),
             ])
@@ -92,8 +96,25 @@ pub(super) fn processes<'a, M: 'a>(list: &[ProcessInfo]) -> Element<'a, M> {
         .into()
 }
 
-pub(super) fn network<'a, M: 'a>(sample: &MonitorSample) -> Element<'a, M> {
+/// Keep process names inside their column (names are already control-free).
+fn short_name(name: &str) -> String {
+    const MAX: usize = 16;
+    if name.chars().count() <= MAX {
+        return name.to_owned();
+    }
+    let mut out: String = name.chars().take(MAX - 1).collect();
+    out.push('…');
+    out
+}
+
+pub(super) fn network<'a, M: 'a>(
+    sample: &MonitorSample,
+    globe: Option<&GlobeView<'a>>,
+) -> Element<'a, M> {
     let mut col = column![].spacing(6);
+    if let Some(globe) = globe {
+        col = col.push(globe_view(globe, sample));
+    }
     if sample.interfaces.is_empty() {
         col = col.push(text("No active interfaces").size(12));
     }
@@ -109,6 +130,26 @@ pub(super) fn network<'a, M: 'a>(sample: &MonitorSample) -> Element<'a, M> {
         Some(Ok(list)) => col = col.push(connections(list)),
     }
     col.into()
+}
+
+/// Square globe canvas plus a caption explaining what the markers are.
+fn globe_view<'a, M: 'a>(globe: &GlobeView<'a>, sample: &MonitorSample) -> Element<'a, M> {
+    let caption = match (&sample.geoip_status, globe.markers.len()) {
+        (None, _) => "Set a GeoIP database in Settings to plot peers".to_owned(),
+        (Some(_), 0) => "No located public peers".to_owned(),
+        (Some(_), n) => format!("{n} peer location(s)"),
+    };
+    let view = GlobeView {
+        state: globe.state,
+        markers: globe.markers,
+        theme: globe.theme,
+    };
+    column![
+        canvas(view).width(Length::Fill).height(GLOBE_SIZE),
+        text(caption).size(10),
+    ]
+    .spacing(4)
+    .into()
 }
 
 fn interface<'a, M: 'a>(iface: &InterfaceRate) -> Element<'a, M> {
@@ -196,6 +237,14 @@ mod tests {
             },
             location,
         }
+    }
+
+    #[test]
+    fn long_process_names_are_shortened() {
+        assert_eq!(short_name("zsh"), "zsh");
+        let long = short_name("com.apple.Virtualization.VirtualMachine");
+        assert_eq!(long.chars().count(), 16);
+        assert!(long.ends_with('…'));
     }
 
     #[test]
