@@ -15,7 +15,7 @@ use super::settings::{Settings, overrides_toml};
 use super::state::{PaneState, Tab, splits};
 use crate::config::{Config, DEFAULT_PROFILE_ID, LayoutPreset, write_atomic};
 use crate::panels::metrics::BACKGROUND_INTERVAL;
-use crate::panels::{MonitorPlan, MonitorSample, MonitorWorker};
+use crate::panels::{BuiltinPanel, MonitorPlan, MonitorSample, MonitorWorker};
 use crate::render::CellMetrics;
 use crate::session::{SessionCommand, SessionConfig, spawn_session};
 use crate::sound::Cue;
@@ -54,11 +54,10 @@ impl App {
             .active_tab()
             .and_then(Tab::focused)
             .and_then(|p| p.pixel_size);
-        let panel = if self.panel_visible {
-            super::view::PANEL_WIDTH + 8.0
-        } else {
-            0.0
-        };
+        let right = self.is_shown(BuiltinPanel::System) || self.is_shown(BuiltinPanel::Network);
+        let left = self.is_shown(BuiltinPanel::Directory);
+        let column = super::view::PANEL_WIDTH + 8.0;
+        let panel = column * (f32::from(u8::from(right)) + f32::from(u8::from(left)));
         let (width, height) = focused.map_or(
             (INITIAL_WINDOW.0 - panel - 16.0, INITIAL_WINDOW.1 - 80.0),
             |size| (size.width, size.height),
@@ -210,15 +209,9 @@ impl App {
             Action::OpenSettings => {
                 self.settings = Some(Settings::open(&self.config, &self.keymap))
             }
-            Action::ToggleMetrics => {
-                self.panel_visible = !self.panel_visible;
-                self.sync_metrics_worker();
-                self.play(if self.panel_visible {
-                    Cue::PanelOpen
-                } else {
-                    Cue::PanelClose
-                });
-            }
+            Action::ToggleSystem => self.toggle_panel(BuiltinPanel::System),
+            Action::ToggleNetwork => self.toggle_panel(BuiltinPanel::Network),
+            Action::ToggleDirectory => self.toggle_panel(BuiltinPanel::Directory),
             Action::ResetLayout => self.reset_layout(),
             Action::FontIncrease => self.adjust_font(1.0),
             Action::FontDecrease => self.adjust_font(-1.0),
@@ -404,10 +397,29 @@ impl App {
         iced::exit()
     }
 
+    /// Show or hide one panel; the monitor worker follows what is visible.
+    fn toggle_panel(&mut self, panel: BuiltinPanel) {
+        let opened = if self.shown.remove(&panel) {
+            false
+        } else {
+            self.shown.insert(panel);
+            true
+        };
+        self.last_globe_tick = None;
+        self.sync_metrics_worker();
+        self.play(if opened {
+            Cue::PanelOpen
+        } else {
+            Cue::PanelClose
+        });
+    }
+
     /// What the visible panels need sampled; everything else stays off.
     fn monitor_plan(&self) -> MonitorPlan {
         let panels = &self.config.panels;
-        let visible = self.panel_visible;
+        let system = self.is_shown(BuiltinPanel::System);
+        let network = self.is_shown(BuiltinPanel::Network);
+        let directory = self.is_shown(BuiltinPanel::Directory);
         let focused = Duration::from_millis(panels.metrics.interval_ms);
         let interval = if self.window_focused {
             focused
@@ -419,17 +431,15 @@ impl App {
         let files_pid = self.focused_pid();
         MonitorPlan {
             interval,
-            system: visible && panels.metrics.enabled,
-            processes: (visible && panels.processes.enabled)
+            system,
+            processes: (system && panels.processes.enabled)
                 .then_some(usize::from(panels.processes.count)),
-            network: (visible && panels.network.enabled).then_some(network_every),
+            network: network.then_some(network_every),
             connections: panels.network.connections,
             geoip_database: (!geoip.is_empty()).then(|| std::path::PathBuf::from(geoip)),
-            files_pid: if visible && panels.files.enabled {
-                files_pid
-            } else {
-                None
-            },
+            public_ip_endpoint: (network && panels.network.public_ip_lookup)
+                .then(|| panels.network.public_ip_endpoint.trim().to_owned()),
+            files_pid: if directory { files_pid } else { None },
             show_hidden: panels.files.show_hidden,
         }
     }
@@ -532,6 +542,20 @@ impl App {
                 .keyboard
                 .on_screen
                 .then(|| super::app::keyboard_for(&self.layouts, &config.keyboard.layout));
+        }
+        // A panel whose "enabled" setting changed follows it; others keep their toggle.
+        let before = super::app::initially_shown(&self.config);
+        let after = super::app::initially_shown(&config);
+        for panel in BuiltinPanel::ALL {
+            match (before.contains(&panel), after.contains(&panel)) {
+                (false, true) => {
+                    self.shown.insert(panel);
+                }
+                (true, false) => {
+                    self.shown.remove(&panel);
+                }
+                _ => {}
+            }
         }
         self.config = config;
         self.sync_metrics_worker();

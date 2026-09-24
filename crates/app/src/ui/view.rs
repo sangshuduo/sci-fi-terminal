@@ -12,7 +12,7 @@ use super::palette;
 use super::settings;
 use super::state::{PaneState, Tab};
 use super::style;
-use crate::panels::{BuiltinPanel, PanelContext};
+use crate::panels::{BuiltinPanel, Dock, PanelContext};
 use crate::render::TerminalView;
 use crate::render::globe::GlobeView;
 
@@ -22,8 +22,10 @@ const PREVIEW_LINES: usize = 12;
 
 impl App {
     pub fn view(&self) -> Element<'_, Message> {
-        let body = row![self.panes_view()]
-            .extend(self.panel_view())
+        let body = row![]
+            .extend(self.dock_view(Dock::Left))
+            .push(self.panes_view())
+            .extend(self.dock_view(Dock::Right))
             .spacing(4)
             .height(Length::Fill);
         let base = column![self.tab_bar(), body]
@@ -86,7 +88,12 @@ impl App {
             action("+", super::actions::Action::NewTab),
             Space::new().width(Length::Fill),
             action("Commands", super::actions::Action::TogglePalette),
-            action("System", super::actions::Action::ToggleMetrics),
+            self.panel_toggle(BuiltinPanel::System, super::actions::Action::ToggleSystem),
+            self.panel_toggle(BuiltinPanel::Network, super::actions::Action::ToggleNetwork),
+            self.panel_toggle(
+                BuiltinPanel::Directory,
+                super::actions::Action::ToggleDirectory
+            ),
             action("Settings", super::actions::Action::OpenSettings),
         ]
         .spacing(6)
@@ -95,6 +102,19 @@ impl App {
             .padding([2, 6])
             .width(Length::Fill)
             .style(|_| style::bar(&self.theme))
+            .into()
+    }
+
+    /// Title-bar toggle, highlighted while its panel is shown.
+    fn panel_toggle(
+        &self,
+        panel: BuiltinPanel,
+        action: super::actions::Action,
+    ) -> Element<'_, Message> {
+        button(text(panel.title()).size(13))
+            .padding([3, 8])
+            .style(style::tab(&self.theme, self.is_shown(panel)))
+            .on_press(Message::Run(action))
             .into()
     }
 
@@ -158,56 +178,49 @@ impl App {
         canvas(view).width(Length::Fill).height(Length::Fill).into()
     }
 
-    fn panel_view(&self) -> Option<Element<'_, Message>> {
-        if !self.panel_visible {
-            return None;
-        }
-        let live = self
-            .tabs
-            .iter()
-            .flat_map(|t| t.panes.iter())
-            .filter(|(_, p)| p.is_live())
-            .count();
-        let context = PanelContext {
+    fn panel_context(&self) -> PanelContext<'_> {
+        PanelContext {
             sample: &self.monitor,
-            session_count: self.session_count(),
-            live_sessions: live,
+            show_processes: self.config.panels.processes.enabled,
             globe: self.config.panels.network.globe.then(|| GlobeView {
                 state: &self.globe,
                 markers: &self.globe_markers,
+                home: self.globe_home(),
                 theme: &self.theme,
             }),
-        };
-        let ui_font = super::app::font_for_ui(&self.theme.style.ui_font);
-        let sections = self
-            .panels
-            .iter()
-            .filter(|panel| self.panel_enabled(*panel))
-            .fold(column![].spacing(16), |col, panel| {
-                let title = text(panel.title()).size(15).font(ui_font);
-                col.push(column![title, panel.view(&context, Message::Panel)].spacing(8))
-            });
-        Some(
-            container(scrollable(
-                container(sections).padding(iced::Padding::ZERO.right(12)),
-            ))
-            .padding(10)
-            .width(PANEL_WIDTH)
-            .height(Length::Fill)
-            .style(|_| style::surface(&self.theme))
-            .into(),
-        )
+        }
     }
 
-    fn panel_enabled(&self, panel: BuiltinPanel) -> bool {
-        let panels = &self.config.panels;
-        match panel {
-            BuiltinPanel::System => panels.metrics.enabled,
-            BuiltinPanel::Processes => panels.processes.enabled,
-            BuiltinPanel::Network => panels.network.enabled,
-            BuiltinPanel::Files => panels.files.enabled,
-            BuiltinPanel::Sessions => true,
+    /// One column of independently framed panel cards for a dock side.
+    fn dock_view(&self, dock: Dock) -> Option<Element<'_, Message>> {
+        let panels: Vec<BuiltinPanel> = self
+            .panels
+            .docked(dock)
+            .filter(|panel| self.is_shown(*panel))
+            .collect();
+        if panels.is_empty() {
+            return None;
         }
+        let cards = panels.into_iter().fold(column![].spacing(4), |col, panel| {
+            col.push(self.panel_card(panel))
+        });
+        Some(cards.width(PANEL_WIDTH).height(Length::Fill).into())
+    }
+
+    fn panel_card(&self, panel: BuiltinPanel) -> Element<'_, Message> {
+        let context = self.panel_context();
+        let ui_font = super::app::font_for_ui(&self.theme.style.ui_font);
+        let title = text(panel.title()).size(15).font(ui_font);
+        let body = scrollable(
+            container(panel.view(&context, Message::Panel)).padding(iced::Padding::ZERO.right(12)),
+        )
+        .height(Length::Fill);
+        container(column![title, body].spacing(8))
+            .padding(10)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(|_| style::surface(&self.theme))
+            .into()
     }
 
     fn keyboard_view(&self) -> Option<Element<'_, Message>> {

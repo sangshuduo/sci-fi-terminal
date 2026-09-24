@@ -21,7 +21,7 @@ use crate::config::{
     Config, ConfigPaths, Theme, builtin_themes, find_theme, load_effective, load_user_themes,
 };
 use crate::osk::{Keyboard, Layout, OskMessage, builtin_layout, load_user_layouts};
-use crate::panels::{MonitorSample, MonitorWorker, PanelMsg, PanelRegistry};
+use crate::panels::{BuiltinPanel, MonitorSample, MonitorWorker, PanelMsg, PanelRegistry};
 use crate::render::globe::{GlobeState, Marker, markers_from};
 use crate::render::{CellMetrics, TerminalEvent};
 use crate::session::Notify;
@@ -105,7 +105,8 @@ pub struct App {
     pub(super) events: UnboundedSender<AppEvent>,
     pub(super) notify: Arc<dyn Notify>,
     pub(super) panels: PanelRegistry,
-    pub(super) panel_visible: bool,
+    /// Panels currently shown; each is toggled independently.
+    pub(super) shown: std::collections::HashSet<BuiltinPanel>,
     pub(super) monitor_worker: Option<MonitorWorker>,
     pub(super) monitor: MonitorSample,
     pub(super) sound: SoundPlayer,
@@ -153,7 +154,7 @@ impl App {
             config.appearance.font_size,
             config.appearance.line_height,
         );
-        let panel_visible = config.panels.metrics.enabled;
+        let shown = initially_shown(&config);
         let layouts = collect_layouts(paths.as_ref(), options.safe_mode, &mut notices);
         let keyboard = config
             .keyboard
@@ -176,7 +177,7 @@ impl App {
             notify: Arc::new(EventNotify(sender.clone())),
             events: sender,
             panels: PanelRegistry::builtin(),
-            panel_visible,
+            shown,
             monitor_worker: None,
             monitor: MonitorSample::default(),
             sound,
@@ -212,7 +213,7 @@ impl App {
     /// Keyboard and window events, plus a ≤ 30 Hz tick only while the globe
     /// is visibly rotating. Terminal redraws are driven by damage only.
     pub fn subscription(&self) -> Subscription<Message> {
-        let globe = if self.globe_rotating() {
+        let globe = if self.globe_rotating() || self.home_flashing() {
             iced::time::every(GLOBE_FRAME).map(Message::GlobeTick)
         } else {
             Subscription::none()
@@ -220,15 +221,35 @@ impl App {
         Subscription::batch([Self::input_events(), globe])
     }
 
-    /// Whether the globe should animate right now.
-    pub(super) fn globe_rotating(&self) -> bool {
-        let network = &self.config.panels.network;
-        self.panel_visible
+    pub(super) fn is_shown(&self, panel: BuiltinPanel) -> bool {
+        self.shown.contains(&panel)
+    }
+
+    /// The globe is on screen and motion is allowed.
+    fn globe_can_animate(&self) -> bool {
+        self.is_shown(BuiltinPanel::Network)
             && self.window_focused
-            && network.enabled
-            && network.globe
-            && network.globe_rotate
+            && self.config.panels.network.globe
             && !self.config.appearance.reduced_motion
+    }
+
+    /// Whether the globe should rotate right now.
+    pub(super) fn globe_rotating(&self) -> bool {
+        self.globe_can_animate() && self.config.panels.network.globe_rotate
+    }
+
+    /// Whether the home spot should flash right now.
+    pub(super) fn home_flashing(&self) -> bool {
+        self.globe_can_animate() && self.globe_home().is_some()
+    }
+
+    /// Located home position from the opt-in public IP lookup.
+    pub(super) fn globe_home(&self) -> Option<Marker> {
+        let location = self.monitor.home.as_ref()?.location.as_ref()?;
+        Some(Marker {
+            latitude: location.latitude? as f32,
+            longitude: location.longitude? as f32,
+        })
     }
 
     fn input_events() -> Subscription<Message> {
@@ -281,7 +302,14 @@ impl App {
                     .last_globe_tick
                     .map_or(0.0, |last| (now - last).as_secs_f32());
                 self.last_globe_tick = Some(now);
-                self.globe.advance(elapsed);
+                if self.globe_rotating() {
+                    self.globe.advance(elapsed);
+                }
+                if self.home_flashing() {
+                    self.globe.pulse(elapsed);
+                } else {
+                    self.globe.hold_pulse();
+                }
                 Task::none()
             }
             Message::Panel(PanelMsg::Files(crate::panels::FilesMsg::InsertCd(path))) => {
@@ -456,6 +484,19 @@ fn collect_layouts(
     layouts
 }
 
+/// Panels shown at startup: each panel's `enabled` setting.
+pub(super) fn initially_shown(config: &Config) -> std::collections::HashSet<BuiltinPanel> {
+    let panels = &config.panels;
+    [
+        (BuiltinPanel::System, panels.metrics.enabled),
+        (BuiltinPanel::Network, panels.network.enabled),
+        (BuiltinPanel::Directory, panels.files.enabled),
+    ]
+    .into_iter()
+    .filter_map(|(panel, on)| on.then_some(panel))
+    .collect()
+}
+
 /// UI chrome font from the theme's `[style] ui_font`; empty means the default.
 pub(super) fn font_for_ui(family: &str) -> Font {
     if family.trim().is_empty() {
@@ -503,9 +544,16 @@ impl App {
             self.globe_markers = markers;
             self.globe.cache.clear();
         }
+        if !self.home_flashing() {
+            self.globe.hold_pulse();
+        }
         if !self.globe_rotating() {
             self.last_globe_tick = None;
-            self.globe.face(self.globe_markers.first().copied());
+            // A still globe faces home when known, otherwise the first peer.
+            let target = self
+                .globe_home()
+                .or_else(|| self.globe_markers.first().copied());
+            self.globe.face(target);
         }
     }
 

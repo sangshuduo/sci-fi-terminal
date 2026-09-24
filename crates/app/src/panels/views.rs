@@ -27,7 +27,17 @@ fn labelled<'a, M: 'a>(label: &'a str, value: String) -> Element<'a, M> {
     .into()
 }
 
-pub(super) fn system<'a, M: 'a>(sample: Option<&MetricsSample>) -> Element<'a, M> {
+/// System panel: CPU, memory, swap and (optionally) the top processes.
+pub(super) fn system<'a, M: 'a>(sample: &MonitorSample, show_processes: bool) -> Element<'a, M> {
+    let mut col = column![usage(sample.system.as_ref())].spacing(14);
+    if show_processes {
+        col = col
+            .push(column![text("Top processes").size(13), processes(&sample.processes)].spacing(6));
+    }
+    col.into()
+}
+
+fn usage<'a, M: 'a>(sample: Option<&MetricsSample>) -> Element<'a, M> {
     let Some(sample) = sample else {
         return placeholder("Sampling…");
     };
@@ -74,7 +84,7 @@ pub(super) fn system<'a, M: 'a>(sample: Option<&MetricsSample>) -> Element<'a, M
     .into()
 }
 
-pub(super) fn processes<'a, M: 'a>(list: &[ProcessInfo]) -> Element<'a, M> {
+fn processes<'a, M: 'a>(list: &[ProcessInfo]) -> Element<'a, M> {
     if list.is_empty() {
         return placeholder("Sampling…");
     }
@@ -142,14 +152,33 @@ fn globe_view<'a, M: 'a>(globe: &GlobeView<'a>, sample: &MonitorSample) -> Eleme
     let view = GlobeView {
         state: globe.state,
         markers: globe.markers,
+        home: globe.home,
         theme: globe.theme,
     };
     column![
         canvas(view).width(Length::Fill).height(GLOBE_SIZE),
+        home_line(sample),
         text(caption).size(10),
     ]
     .spacing(4)
     .into()
+}
+
+/// "You are here" line for the opt-in public IP lookup.
+fn home_line<'a, M: 'a>(sample: &MonitorSample) -> Element<'a, M> {
+    let line = match (&sample.home, &sample.home_status) {
+        (Some(home), status) => match home.place() {
+            Some(place) => format!("◉ You: {place} ({})", home.ip),
+            None => format!(
+                "◉ You: {} — {}",
+                home.ip,
+                status.as_deref().unwrap_or("location unknown")
+            ),
+        },
+        (None, Some(status)) => status.clone(),
+        (None, None) => "Enable public IP lookup in Settings to mark your city".to_owned(),
+    };
+    text(line).size(11).into()
 }
 
 fn interface<'a, M: 'a>(iface: &InterfaceRate) -> Element<'a, M> {
@@ -210,15 +239,6 @@ pub(super) fn describe(view: &ConnectionView) -> String {
         Some(place) => format!("{protocol} {remote} · {place}"),
         None => format!("{protocol} {remote}"),
     }
-}
-
-pub(super) fn sessions<'a, M: 'a>(open: usize, running: usize) -> Element<'a, M> {
-    column![
-        labelled("Open", open.to_string()),
-        labelled("Running", running.to_string())
-    ]
-    .spacing(6)
-    .into()
 }
 
 #[cfg(test)]

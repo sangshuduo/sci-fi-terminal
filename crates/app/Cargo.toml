@@ -19,6 +19,7 @@ directories.workspace = true
 netstat2.workspace = true
 maxminddb.workspace = true
 rodio.workspace = true
+ureq.workspace = true
 serde.workspace = true
 toml.workspace = true
 thiserror.workspace = true

@@ -202,6 +202,11 @@ pub struct NetworkPanelSettings {
     pub globe: bool,
     /// Rotate the globe (≤ 30 Hz) while visible; `appearance.reduced_motion` keeps it still.
     pub globe_rotate: bool,
+    /// Opt-in: ask `public_ip_endpoint` for this machine's public IP so the
+    /// globe can mark your own city. The endpoint sees your IP. Off by default.
+    pub public_ip_lookup: bool,
+    /// HTTPS endpoint returning the caller's IP as plain text.
+    pub public_ip_endpoint: String,
 }
 
 impl Default for NetworkPanelSettings {
@@ -213,6 +218,8 @@ impl Default for NetworkPanelSettings {
             geoip_database: String::new(),
             globe: true,
             globe_rotate: true,
+            public_ip_lookup: false,
+            public_ip_endpoint: crate::monitor::public_ip::DEFAULT_ENDPOINT.to_owned(),
         }
     }
 }

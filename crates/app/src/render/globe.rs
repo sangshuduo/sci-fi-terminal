@@ -22,6 +22,8 @@ pub const ROTATION_SPEED: f32 = 6.0;
 pub const MAX_MARKERS: usize = 64;
 /// View tilt so both hemispheres are visible.
 const TILT_DEGREES: f32 = 18.0;
+/// Seconds per home-spot flash.
+pub const FLASH_PERIOD: f32 = 1.2;
 
 /// Coastline polylines as (longitude, latitude) in radians.
 pub struct Coastlines {
@@ -99,6 +101,8 @@ pub struct Marker {
 /// Rotation state owned by the app; the cache is cleared on each tick.
 pub struct GlobeState {
     pub rotation_degrees: f32,
+    /// 0..1 phase of the home-spot pulse; stays 0 when motion is reduced.
+    pub flash_phase: f32,
     pub cache: Cache,
 }
 
@@ -106,6 +110,7 @@ impl Default for GlobeState {
     fn default() -> Self {
         Self {
             rotation_degrees: 0.0,
+            flash_phase: 0.0,
             cache: Cache::new(),
         }
     }
@@ -119,7 +124,21 @@ impl GlobeState {
         self.cache.clear();
     }
 
-    /// Face the first marker when motion is off, so the static view is useful.
+    /// Advance the home-spot pulse (one flash per [`FLASH_PERIOD`] seconds).
+    pub fn pulse(&mut self, seconds: f32) {
+        self.flash_phase = (self.flash_phase + seconds.clamp(0.0, 0.1) / FLASH_PERIOD).fract();
+        self.cache.clear();
+    }
+
+    /// Stop pulsing (reduced motion): a steady spot is drawn.
+    pub fn hold_pulse(&mut self) {
+        if self.flash_phase != 0.0 {
+            self.flash_phase = 0.0;
+            self.cache.clear();
+        }
+    }
+
+    /// Face a marker when motion is off, so the static view is useful.
     pub fn face(&mut self, marker: Option<Marker>) {
         let target = marker.map_or(0.0, |m| m.longitude).rem_euclid(360.0);
         if (target - self.rotation_degrees).abs() > f32::EPSILON {
@@ -132,6 +151,8 @@ impl GlobeState {
 pub struct GlobeView<'a> {
     pub state: &'a GlobeState,
     pub markers: &'a [Marker],
+    /// This machine's location from the opt-in public IP lookup.
+    pub home: Option<Marker>,
     pub theme: &'a Theme,
 }
 
@@ -185,6 +206,53 @@ impl GlobeView<'_> {
             Stroke::default().with_color(accent).with_width(1.2),
         );
         self.paint_markers(frame, lon0, lat0, &to_screen);
+        self.paint_home(frame, lon0, lat0, &to_screen);
+    }
+
+    /// Bright core plus a ring that expands and fades each flash period.
+    /// At phase 0 (reduced motion) the ring is drawn steady.
+    fn paint_home(
+        &self,
+        frame: &mut Frame,
+        lon0: f32,
+        lat0: f32,
+        to_screen: &impl Fn((f32, f32)) -> Point,
+    ) {
+        let Some(home) = self.home else { return };
+        let (x, y, visible) = project(
+            lon0,
+            lat0,
+            home.longitude.to_radians(),
+            home.latitude.to_radians(),
+        );
+        if !visible {
+            return;
+        }
+        let at = to_screen((x, y));
+        let glow = to_color(self.theme.colors.cursor);
+        let phase = self.state.flash_phase;
+        let ring = Stroke::default()
+            .with_color(Color {
+                a: 0.9 * (1.0 - phase),
+                ..glow
+            })
+            .with_width(1.5);
+        frame.stroke(&Path::circle(at, 4.0 + 10.0 * phase), ring);
+        let brightness = 0.55 + 0.45 * (phase * 2.0 * PI).cos().abs();
+        frame.fill(
+            &Path::circle(at, 6.0),
+            Color {
+                a: 0.3 * brightness,
+                ..glow
+            },
+        );
+        frame.fill(
+            &Path::circle(at, 3.0),
+            Color {
+                a: brightness,
+                ..glow
+            },
+        );
     }
 
     fn paint_markers(
@@ -368,6 +436,21 @@ mod tests {
         assert!(!back);
         let (x, _, edge) = project(0.0, 0.0, PI / 2.0, 0.0);
         assert!(edge && (x - 1.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn pulse_cycles_and_holds() {
+        let mut globe = GlobeState::default();
+        for _ in 0..6 {
+            globe.pulse(0.1);
+        }
+        assert!((globe.flash_phase - 0.6 / FLASH_PERIOD).abs() < 1e-4);
+        for _ in 0..10 {
+            globe.pulse(0.1);
+        }
+        assert!(globe.flash_phase < 1.0, "phase wraps");
+        globe.hold_pulse();
+        assert_eq!(globe.flash_phase, 0.0);
     }
 
     #[test]

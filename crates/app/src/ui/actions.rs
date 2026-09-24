@@ -27,7 +27,9 @@ pub enum Action {
     ScrollPageDown,
     TogglePalette,
     OpenSettings,
-    ToggleMetrics,
+    ToggleSystem,
+    ToggleNetwork,
+    ToggleDirectory,
     ResetLayout,
     FontIncrease,
     FontDecrease,
@@ -216,12 +218,28 @@ pub const ACTIONS: &[ActionInfo] = &[
         Some("Cmd+,")
     ),
     action!(
-        ToggleMetrics,
-        "panel.toggle_metrics",
-        "Toggle system panel",
+        ToggleSystem,
+        "panel.toggle_system",
+        "Toggle System panel",
         Global,
         Some("Ctrl+Shift+M"),
         Some("Cmd+Shift+M")
+    ),
+    action!(
+        ToggleNetwork,
+        "panel.toggle_network",
+        "Toggle Network panel",
+        Global,
+        Some("Ctrl+Shift+N"),
+        Some("Cmd+Shift+N")
+    ),
+    action!(
+        ToggleDirectory,
+        "panel.toggle_directory",
+        "Toggle Directory panel",
+        Global,
+        Some("Ctrl+Shift+O"),
+        Some("Cmd+Shift+O")
     ),
     action!(
         ResetLayout,

@@ -194,6 +194,14 @@ fn validate_extensions(config: &Config, out: &mut Vec<Diagnostic>) {
             "must be a local file path (URLs are not supported; nothing is downloaded)",
         ));
     }
+    if let Err(message) =
+        crate::monitor::public_ip::validate_endpoint(&panels.network.public_ip_endpoint)
+    {
+        out.push(Diagnostic::new(
+            "panels.network.public_ip_endpoint",
+            message,
+        ));
+    }
     check_f32(out, "sound.volume", config.sound.volume, 0.0, 1.0);
     if !is_safe_id(&config.keyboard.layout) {
         out.push(Diagnostic::new(

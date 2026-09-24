@@ -96,6 +96,32 @@ Dynamic native libraries expose unstable Rust ABI and process-wide trust. Subpro
 - Continuous redraws while rotating are an intentional, visible animation within the spec's 30 Hz ceiling, and they appear in idle CPU only when the user enables motion.
 - The asset adds 21 KB to the binary.
 
+## ADR-007: Home location from an opt-in public-IP lookup
+
+**Status:** accepted by the project owner, 2026-09-24. This amends the "no network access" rule in SECURITY_AND_PROVENANCE with one opt-in exception.
+
+**Context:** the owner wants the globe to mark the city of the machine's current IP with a flashing spot. Behind NAT, a machine only knows its private address, so the public address can only be learned by asking an external service.
+
+**Decision:**
+- Add `panels.network.public_ip_lookup`, **off by default**.
+- When on, the monitor worker sends one HTTPS GET to `panels.network.public_ip_endpoint` (default `https://api.ipify.org`). It repeats at most every 30 minutes, retries 5 minutes after a failure, and runs only while the Network panel is visible.
+- Request limits: https only, no redirects, 5 s timeout, 64-byte response cap. The body must be a single public IP address.
+- The address is located with the user's offline GeoIP database and drawn as a flashing spot on the globe. The flash is a 1.2 s expanding ring, and it is steady when reduced motion is on.
+- The UI shows the resolved city and IP. Settings state that the endpoint sees your IP.
+
+**Rejected alternatives:**
+
+| Alternative | Why rejected |
+|---|---|
+| Manual home location | Doesn't follow travel or VPN |
+| Time-zone estimate | Not the IP's location |
+| Always-on lookup | Violates privacy-by-default |
+| Online GeoIP APIs | Would also send peer addresses |
+
+**Consequences:**
+- The first network request made by the app itself, not by a child process.
+- New dependency: `ureq` with rustls.
+
 ## Proposed dependency budget
 
 | Dependency | Purpose | License posture / admission condition |
@@ -110,6 +136,7 @@ Dynamic native libraries expose unstable Rust ABI and process-wide trust. Subpro
 | sysinfo | CPU/memory, process table, interface counters | MIT upstream; process sampling only while its panel is visible; never command lines or environment |
 | netstat2 | Local socket tables for the network panel | MIT OR Apache-2.0; read-only, capped results (ADR-005) |
 | maxminddb | Offline GeoIP lookups from a user-supplied `.mmdb` | ISC; no bundled database, no network (ADR-005) |
+| ureq | Opt-in public-IP lookup only (ADR-007) | MIT OR Apache-2.0; `rustls` feature only. Pulls rustls/ring and webpki-roots (CDLA-Permissive-2.0 data), which must appear in notices |
 | rodio | Playback of runtime-synthesised sound cues | MIT OR Apache-2.0; `playback` feature only, no decoders (ADR-005) |
 | tracing | Bounded diagnostic events | No terminal-content logging, no network sink |
 | thiserror | Typed library errors | Optional; do not add overlapping error frameworks |

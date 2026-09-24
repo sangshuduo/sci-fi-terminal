@@ -65,6 +65,8 @@ pub enum SettingsMsg {
     ShowHidden(bool),
     Globe(bool),
     GlobeRotate(bool),
+    PublicIpLookup(bool),
+    PublicIpEndpoint(String),
     Sound(bool),
     Volume(f32),
     TypingSound(bool),
@@ -165,6 +167,8 @@ impl Settings {
             SettingsMsg::ShowHidden(on) => draft.panels.files.show_hidden = on,
             SettingsMsg::Globe(on) => draft.panels.network.globe = on,
             SettingsMsg::GlobeRotate(on) => draft.panels.network.globe_rotate = on,
+            SettingsMsg::PublicIpLookup(on) => draft.panels.network.public_ip_lookup = on,
+            SettingsMsg::PublicIpEndpoint(url) => draft.panels.network.public_ip_endpoint = url,
             SettingsMsg::Sound(on) => draft.sound.enabled = on,
             SettingsMsg::Volume(volume) => draft.sound.volume = (volume * 20.0).round() / 20.0,
             SettingsMsg::TypingSound(on) => draft.sound.keypress = on,
@@ -517,7 +521,7 @@ fn panel_rows<'a, M: Clone + 'a>(
     let presets = vec![EffectsPreset::Off, EffectsPreset::Subtle];
     vec![
         (
-            "System panel",
+            "Show System panel at start",
             checkbox(settings.draft.panels.metrics.enabled)
                 .on_toggle(move |v| wrap(SettingsMsg::Metrics(v)))
                 .into(),
@@ -530,12 +534,12 @@ fn panel_rows<'a, M: Clone + 'a>(
             .into(),
         ),
         toggle(
-            "Process panel",
+            "Top processes in System panel",
             settings.draft.panels.processes.enabled,
             move |v| wrap(SettingsMsg::Processes(v)),
         ),
         toggle(
-            "Network panel",
+            "Show Network panel at start",
             settings.draft.panels.network.enabled,
             move |v| wrap(SettingsMsg::Network(v)),
         ),
@@ -565,7 +569,22 @@ fn panel_rows<'a, M: Clone + 'a>(
             .into(),
         ),
         toggle(
-            "Directory panel",
+            "Look up my public IP (the endpoint sees your IP)",
+            settings.draft.panels.network.public_ip_lookup,
+            move |v| wrap(SettingsMsg::PublicIpLookup(v)),
+        ),
+        (
+            "Public IP endpoint (https)",
+            text_input(
+                crate::monitor::public_ip::DEFAULT_ENDPOINT,
+                &settings.draft.panels.network.public_ip_endpoint,
+            )
+            .on_input(move |e| wrap(SettingsMsg::PublicIpEndpoint(e)))
+            .width(280)
+            .into(),
+        ),
+        toggle(
+            "Show Directory panel at start",
             settings.draft.panels.files.enabled,
             move |v| wrap(SettingsMsg::Files(v)),
         ),

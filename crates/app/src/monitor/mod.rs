@@ -2,8 +2,9 @@
 //!
 //! Everything in this module reads OS state through library APIs (sysinfo,
 //! netstat2, an optional user-supplied offline GeoIP database). Nothing here
-//! shells out to `ps`/`netstat`/`lsof`, performs network I/O, or collects
-//! process command lines or environment variables.
+//! shells out to `ps`/`netstat`/`lsof` or collects process command lines or
+//! environment variables. The single exception to "no network I/O" is the
+//! opt-in, off-by-default [`public_ip`] lookup (ADR-007).
 //!
 //! The functions are designed to be driven from a background worker thread
 //! owned by the caller; each call is bounded in time and output size.
@@ -12,6 +13,7 @@ pub mod connections;
 pub mod geoip;
 pub mod network;
 pub mod processes;
+pub mod public_ip;
 
 pub use connections::{Connection, ConnectionState, MAX_CONNECTIONS, Protocol, list_connections};
 pub use geoip::{GeoIp, GeoIpError, GeoLocation};

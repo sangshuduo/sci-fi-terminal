@@ -48,7 +48,7 @@ Status as of 2026-09-22, branch `feat/terminal-foundation`. This records what ex
 - **Panels.**
   - Panels come from a compile-time registry and receive a scoped, read-only context.
   - The CPU/memory panel samples on its own worker thread and only while visible: every 1 s or more while focused, every 5 s or more otherwise.
-  - A second built-in panel (Sessions) confirms that a new panel can be registered without touching terminal internals.
+  - Three independent panels: System (CPU, memory, swap and top processes), Network and Directory. Each has its own title-bar toggle and shortcut (Ctrl/Cmd+Shift+M, N and O). Directory docks on the left; System and Network are separate cards on the right. The earlier Sessions panel was removed.
 - **CI.** `.github/workflows/ci.yml` runs fmt and clippy on Linux, then tests and a release build on Linux, macOS and Windows. Actions are pinned to commit SHAs.
 
 ## Workspace extensions (ADR-005)
@@ -73,6 +73,11 @@ Status as of 2026-09-22, branch `feat/terminal-foundation`. This records what ex
 - **Theme styling** (`config/style.rs`)
   - An optional `[style]` table controls corner radius, border width, static glow and UI font. It is validated, rejects unknown keys, and has no code, URL or path surface.
   - Signal and Graphite ship with glow; High contrast uses square 2 px borders.
+- **Home spot** (`monitor/public_ip.rs`, ADR-007)
+  - An opt-in public-IP lookup, off by default. It uses HTTPS only, no redirects, a 5 s timeout and a 64-byte response cap, at most every 30 min.
+  - The address is located with the offline database and marked on the globe with a flashing spot (1.2 s expanding ring). The spot is steady under reduced motion, and a still globe turns to face it.
+  - Verified live with the DB-IP City Lite database (not bundled), which resolved the city correctly, using an `#[ignore]` test run on demand.
+  - The flashing itself has not been seen on screen yet: the display was asleep when this was tested.
 - **Peer globe** (`render/globe.rs`, ADR-006)
   - Orthographic wireframe globe built from the bundled public-domain Natural Earth coastlines (provenance recorded in `docs/provenance.csv`), with markers for GeoIP-located peers.
   - Measured on an Apple Silicon Mac, release build, all monitoring panels visible (one-off readings, not a benchmark): about 3–4% CPU with the globe still, about 7% while it rotates. The first version cost about 11%. That dropped after coastline points were precomputed as unit vectors, each layer was drawn as a single path, and the tick was lowered to 20 Hz.

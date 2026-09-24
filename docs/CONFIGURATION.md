@@ -60,6 +60,8 @@ connections = true
 geoip_database = ""    # local .mmdb path; empty = off; never downloaded
 globe = true           # wireframe globe with peer markers
 globe_rotate = true    # <= 30 Hz while visible; still when reduced_motion = true
+public_ip_lookup = false  # opt-in: ask the endpoint for your public IP (it sees your IP)
+public_ip_endpoint = "https://api.ipify.org"  # https only; returns the IP as plain text
 
 [panels.files]
 enabled = true

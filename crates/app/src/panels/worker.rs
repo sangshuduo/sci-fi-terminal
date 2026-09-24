@@ -15,7 +15,7 @@ use super::files::{FilesState, list_directory};
 use super::metrics::{MIN_INTERVAL, MetricsSample, SystemSampler};
 use crate::monitor::{
     Connection, GeoIp, GeoLocation, InterfaceRate, NetworkSampler, ProcessInfo, ProcessSampler,
-    list_connections,
+    list_connections, public_ip,
 };
 
 /// What the visible panels need. `None` disables that collector entirely.
@@ -28,6 +28,8 @@ pub struct MonitorPlan {
     pub network: Option<Duration>,
     pub connections: bool,
     pub geoip_database: Option<PathBuf>,
+    /// Opt-in public IP endpoint (ADR-007); `None` means no network request.
+    pub public_ip_endpoint: Option<String>,
     /// Shell pid whose working directory the file viewer follows.
     pub files_pid: Option<u32>,
     pub show_hidden: bool,
@@ -39,6 +41,30 @@ impl MonitorPlan {
             && self.processes.is_none()
             && self.network.is_none()
             && self.files_pid.is_none()
+    }
+}
+
+/// Retry delay after a failed public IP lookup.
+const HOME_RETRY: Duration = Duration::from_secs(5 * 60);
+
+/// This machine's public address and its GeoIP location, if known.
+#[derive(Debug, Clone, PartialEq)]
+pub struct HomeLocation {
+    pub ip: IpAddr,
+    pub location: Option<GeoLocation>,
+}
+
+impl HomeLocation {
+    /// Short label such as `Toronto, CA`.
+    pub fn place(&self) -> Option<String> {
+        let loc = self.location.as_ref()?;
+        let country = loc.country_code.as_deref().or(loc.country.as_deref());
+        match (loc.city.as_deref(), country) {
+            (Some(city), Some(country)) => Some(format!("{city}, {country}")),
+            (Some(city), None) => Some(city.to_owned()),
+            (None, Some(country)) => Some(country.to_owned()),
+            (None, None) => None,
+        }
     }
 }
 
@@ -57,6 +83,9 @@ pub struct MonitorSample {
     pub interfaces: Vec<InterfaceRate>,
     pub connections: Option<Result<Vec<ConnectionView>, String>>,
     pub geoip_status: Option<String>,
+    /// This machine's public address and, with a GeoIP database, its city.
+    pub home: Option<HomeLocation>,
+    pub home_status: Option<String>,
     pub files: Option<FilesState>,
 }
 
@@ -109,6 +138,8 @@ struct Collector {
     processes: Option<ProcessSampler>,
     network: Option<NetworkSampler>,
     geoip: Option<(PathBuf, Result<GeoIp, String>)>,
+    /// Last public IP result, the endpoint it came from, and when to retry.
+    public_ip: Option<(String, Result<IpAddr, String>, Instant)>,
     last_network: Option<Instant>,
     sample: MonitorSample,
 }
@@ -121,6 +152,7 @@ impl Collector {
             processes: None,
             network: None,
             geoip: None,
+            public_ip: None,
             last_network: None,
             sample: MonitorSample::default(),
         }
@@ -176,14 +208,57 @@ impl Collector {
             .network
             .get_or_insert_with(NetworkSampler::new)
             .sample();
+        self.refresh_geoip();
+        self.tick_home();
         if !self.plan.connections {
             self.sample.connections = None;
             return;
         }
         let listed = list_connections();
-        self.refresh_geoip();
         let geoip = self.geoip.as_mut().and_then(|(_, db)| db.as_mut().ok());
         self.sample.connections = Some(listed.map(|list| locate(list, geoip)));
+    }
+
+    /// Opt-in public IP lookup: at most every 30 min (5 min after a failure),
+    /// and immediately when the endpoint changes. Disabled → no request.
+    fn tick_home(&mut self) {
+        let Some(endpoint) = self.plan.public_ip_endpoint.clone() else {
+            self.public_ip = None;
+            self.sample.home = None;
+            self.sample.home_status = None;
+            return;
+        };
+        let due = match &self.public_ip {
+            Some((last, _, retry_at)) => *last != endpoint || Instant::now() >= *retry_at,
+            None => true,
+        };
+        if due {
+            let result = public_ip::fetch(&endpoint);
+            let wait = if result.is_ok() {
+                public_ip::REFRESH_INTERVAL
+            } else {
+                HOME_RETRY
+            };
+            self.public_ip = Some((endpoint, result, Instant::now() + wait));
+        }
+        let Some((_, result, _)) = &self.public_ip else {
+            return;
+        };
+        match result {
+            Ok(ip) => {
+                let ip = *ip;
+                let geoip = self.geoip.as_mut().and_then(|(_, db)| db.as_mut().ok());
+                let location = geoip.and_then(|db| db.lookup(ip));
+                self.sample.home_status = location
+                    .is_none()
+                    .then(|| "Your city needs a GeoIP database (Settings → Panels)".to_owned());
+                self.sample.home = Some(HomeLocation { ip, location });
+            }
+            Err(err) => {
+                self.sample.home = None;
+                self.sample.home_status = Some(err.clone());
+            }
+        }
     }
 
     /// Open (or re-open after a path change) the user's offline database.
@@ -321,5 +396,44 @@ mod tests {
             }
             .is_idle()
         );
+    }
+
+    #[test]
+    fn disabled_public_ip_lookup_makes_no_request_and_reports_nothing() {
+        let plan = MonitorPlan {
+            interval: MIN_INTERVAL,
+            network: Some(MIN_INTERVAL),
+            public_ip_endpoint: None,
+            ..MonitorPlan::default()
+        };
+        let sample = collect(plan);
+        assert!(sample.home.is_none() && sample.home_status.is_none());
+    }
+
+    /// Live check of the opt-in lookup. Makes a real HTTPS request, so it only
+    /// runs on demand: `SFT_GEOIP_DB=/path/city.mmdb cargo test -- --ignored`.
+    #[test]
+    #[ignore = "network: sends one request to the public IP endpoint"]
+    fn live_public_ip_is_located_with_a_real_database() {
+        let Ok(db) = std::env::var("SFT_GEOIP_DB") else {
+            eprintln!("SFT_GEOIP_DB not set; skipping");
+            return;
+        };
+        let plan = MonitorPlan {
+            interval: MIN_INTERVAL,
+            network: Some(MIN_INTERVAL),
+            geoip_database: Some(PathBuf::from(db)),
+            public_ip_endpoint: Some(public_ip::DEFAULT_ENDPOINT.to_owned()),
+            ..MonitorPlan::default()
+        };
+        let sample = collect(plan);
+        let home = sample.home.expect("public IP resolved");
+        let place = home.place().expect("city located");
+        let location = home.location.expect("location");
+        eprintln!(
+            "home: {place} lat={:?} lon={:?}",
+            location.latitude, location.longitude
+        );
+        assert!(location.latitude.is_some() && location.longitude.is_some());
     }
 }

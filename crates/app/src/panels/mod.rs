@@ -14,13 +14,13 @@ use iced::Element;
 
 pub use files::{FilesMsg, FilesState};
 pub use metrics::{MetricsSample, format_bytes};
-pub use worker::{ConnectionView, MonitorPlan, MonitorSample, MonitorWorker};
+pub use worker::{ConnectionView, HomeLocation, MonitorPlan, MonitorSample, MonitorWorker};
 
 /// Read-only services a panel may use.
 pub struct PanelContext<'a> {
     pub sample: &'a MonitorSample,
-    pub session_count: usize,
-    pub live_sessions: usize,
+    /// Show the top-process table inside the System panel.
+    pub show_processes: bool,
     /// Globe drawing inputs for the network panel; `None` hides the globe.
     pub globe: Option<crate::render::globe::GlobeView<'a>>,
 }
@@ -31,54 +31,47 @@ pub enum PanelMsg {
     Files(FilesMsg),
 }
 
-/// Identifies what a panel needs sampled while it is visible.
+/// Which side of the terminal area a panel docks to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Needs {
-    Nothing,
-    System,
-    Processes,
-    Network,
-    Files,
+pub enum Dock {
+    Left,
+    Right,
 }
 
-/// The registered built-in panels.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The registered built-in panels. Each is toggled independently.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BuiltinPanel {
+    /// CPU, memory, swap and top processes.
     System,
-    Processes,
+    /// Peer globe, interface rates and connections.
     Network,
-    Files,
-    Sessions,
+    /// Directory viewer following the focused shell.
+    Directory,
 }
 
 impl BuiltinPanel {
+    pub const ALL: [BuiltinPanel; 3] = [Self::System, Self::Network, Self::Directory];
+
     pub fn id(self) -> &'static str {
         match self {
-            Self::System => "metrics",
-            Self::Processes => "processes",
+            Self::System => "system",
             Self::Network => "network",
-            Self::Files => "files",
-            Self::Sessions => "sessions",
+            Self::Directory => "directory",
         }
     }
 
     pub fn title(self) -> &'static str {
         match self {
             Self::System => "System",
-            Self::Processes => "Processes",
             Self::Network => "Network",
-            Self::Files => "Directory",
-            Self::Sessions => "Sessions",
+            Self::Directory => "Directory",
         }
     }
 
-    pub fn needs(self) -> Needs {
+    pub fn dock(self) -> Dock {
         match self {
-            Self::System => Needs::System,
-            Self::Processes => Needs::Processes,
-            Self::Network => Needs::Network,
-            Self::Files => Needs::Files,
-            Self::Sessions => Needs::Nothing,
+            Self::Directory => Dock::Left,
+            Self::System | Self::Network => Dock::Right,
         }
     }
 
@@ -89,14 +82,12 @@ impl BuiltinPanel {
     ) -> Element<'a, M> {
         let sample = context.sample;
         match self {
-            Self::System => views::system(sample.system.as_ref()),
-            Self::Processes => views::processes(&sample.processes),
+            Self::System => views::system(sample, context.show_processes),
             Self::Network => views::network(sample, context.globe.as_ref()),
-            Self::Files => match &sample.files {
+            Self::Directory => match &sample.files {
                 Some(state) => files::view(state, move |m| wrap(PanelMsg::Files(m))),
                 None => views::placeholder("No focused shell"),
             },
-            Self::Sessions => views::sessions(context.session_count, context.live_sessions),
         }
     }
 }
@@ -109,13 +100,7 @@ pub struct PanelRegistry {
 impl PanelRegistry {
     pub fn builtin() -> Self {
         let mut registry = Self::default();
-        for panel in [
-            BuiltinPanel::System,
-            BuiltinPanel::Processes,
-            BuiltinPanel::Network,
-            BuiltinPanel::Files,
-            BuiltinPanel::Sessions,
-        ] {
+        for panel in BuiltinPanel::ALL {
             registry.register(panel);
         }
         registry
@@ -137,6 +122,11 @@ impl PanelRegistry {
     pub fn iter(&self) -> impl Iterator<Item = BuiltinPanel> + '_ {
         self.panels.iter().copied()
     }
+
+    /// Registered panels docked on `dock`, in registration order.
+    pub fn docked(&self, dock: Dock) -> impl Iterator<Item = BuiltinPanel> + '_ {
+        self.iter().filter(move |panel| panel.dock() == dock)
+    }
 }
 
 #[cfg(test)]
@@ -144,24 +134,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn builtin_registry_lists_panels_in_order() {
+    fn builtin_registry_has_three_independent_panels() {
         let registry = PanelRegistry::builtin();
         let ids: Vec<_> = registry.iter().map(BuiltinPanel::id).collect();
-        assert_eq!(
-            ids,
-            vec!["metrics", "processes", "network", "files", "sessions"]
-        );
-        assert_eq!(
-            registry.get("network").map(BuiltinPanel::needs),
-            Some(Needs::Network)
-        );
+        assert_eq!(ids, vec!["system", "network", "directory"]);
+        let right: Vec<_> = registry.docked(Dock::Right).collect();
+        assert_eq!(right, vec![BuiltinPanel::System, BuiltinPanel::Network]);
+        let left: Vec<_> = registry.docked(Dock::Left).collect();
+        assert_eq!(left, vec![BuiltinPanel::Directory]);
     }
 
     #[test]
     fn duplicate_registration_is_ignored() {
         let mut registry = PanelRegistry::builtin();
-        assert!(!registry.register(BuiltinPanel::Sessions));
-        assert_eq!(registry.iter().count(), 5);
+        assert!(!registry.register(BuiltinPanel::Network));
+        assert_eq!(registry.iter().count(), 3);
     }
 
     #[test]
@@ -169,8 +156,7 @@ mod tests {
         let sample = MonitorSample::default();
         let context = PanelContext {
             sample: &sample,
-            session_count: 2,
-            live_sessions: 1,
+            show_processes: true,
             globe: None,
         };
         for panel in PanelRegistry::builtin().iter() {
