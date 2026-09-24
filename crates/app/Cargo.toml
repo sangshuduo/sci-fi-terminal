@@ -1,0 +1,28 @@
+[package]
+name = "sci-fi-terminal"
+description = "Rust-first native desktop terminal"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "sci-fi-terminal"
+path = "src/main.rs"
+
+[dependencies]
+terminal-core.workspace = true
+platform.workspace = true
+iced.workspace = true
+sysinfo.workspace = true
+directories.workspace = true
+netstat2.workspace = true
+maxminddb.workspace = true
+rodio.workspace = true
+ureq.workspace = true
+serde.workspace = true
+toml.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true
