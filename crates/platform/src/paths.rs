@@ -23,6 +23,22 @@ pub fn home_dir() -> Option<PathBuf> {
     BaseDirs::new().map(|dirs| dirs.home_dir().to_path_buf())
 }
 
+/// Directory new shells start in: where the terminal was launched from.
+///
+/// GUI launchers (Finder, Dock, Launchpad, most desktop menus) start apps
+/// with `/` as the working directory, which is never a useful place for a
+/// shell, so the filesystem root falls back to the home directory — as does
+/// a working directory that no longer exists.
+pub fn launch_directory() -> Option<PathBuf> {
+    choose_launch_directory(std::env::current_dir().ok(), home_dir())
+}
+
+fn choose_launch_directory(current: Option<PathBuf>, home: Option<PathBuf>) -> Option<PathBuf> {
+    current
+        .filter(|dir| dir.is_dir() && dir.parent().is_some())
+        .or(home)
+}
+
 /// Locate a data file shipped with the application (e.g. `dbip-city-lite.mmdb`).
 ///
 /// Searched in order: next to the executable (Windows zip, Linux tarball),
@@ -59,6 +75,33 @@ fn resource_dirs() -> Vec<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn launch_directory_prefers_where_we_were_started() {
+        let here = std::env::current_dir().expect("cwd");
+        let home = PathBuf::from("/home/someone");
+        // GUI launches start in the filesystem root: use home instead.
+        let root = here.ancestors().last().map(PathBuf::from).expect("root");
+        assert_eq!(
+            choose_launch_directory(Some(here.clone()), Some(home.clone())),
+            Some(here)
+        );
+        assert_eq!(
+            choose_launch_directory(Some(root), Some(home.clone())),
+            Some(home.clone())
+        );
+        // A directory that vanished also falls back to home.
+        let gone = PathBuf::from("/definitely/not/here");
+        assert_eq!(
+            choose_launch_directory(Some(gone), Some(home.clone())),
+            Some(home.clone())
+        );
+        assert_eq!(
+            choose_launch_directory(None, Some(home.clone())),
+            Some(home)
+        );
+        assert!(launch_directory().is_some());
+    }
 
     #[test]
     fn bundled_resource_rejects_paths_and_finds_repo_assets() {

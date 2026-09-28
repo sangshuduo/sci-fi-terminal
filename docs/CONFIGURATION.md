@@ -36,6 +36,8 @@ copy_on_select = false
 
 [profiles.default]
 # Empty executable means discover the OS default shell.
+# Optional cwd = "/path"; without it, shells start where the terminal was
+# launched (home when launched from Finder/Dock), or in `-d DIR` if given.
 executable = ""
 args = []
 login_shell = false

@@ -10,6 +10,9 @@ const USAGE: &str = "\
 Usage: sci-fi-terminal [OPTIONS]
 
 Options:
+  -d, --working-directory <DIR>
+                    Start shells in DIR (default: the directory the terminal
+                    was launched from; home when launched from Finder/Dock)
   --config <DIR>    Use DIR as the configuration directory
   --check-config    Validate configuration files and exit
   --safe-mode       Ignore UI overrides, custom themes and saved layout (nothing is deleted)
@@ -33,12 +36,26 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Command, String>
                 let dir = args.next().ok_or("--config needs a directory")?;
                 options.config_dir = Some(PathBuf::from(dir));
             }
+            "-d" | "--working-directory" => {
+                let dir = args.next().ok_or("--working-directory needs a directory")?;
+                let dir = PathBuf::from(dir);
+                if !dir.is_dir() {
+                    return Err(format!(
+                        "working directory {} does not exist",
+                        dir.display()
+                    ));
+                }
+                options.working_directory = Some(dir);
+            }
             "--check-config" => check = true,
             "--safe-mode" => options.safe_mode = true,
             "-h" | "--help" => return Ok(Command::Help),
             "-V" | "--version" => return Ok(Command::Version),
             other => return Err(format!("unknown argument `{other}`")),
         }
+    }
+    if options.working_directory.is_none() {
+        options.working_directory = platform::paths::launch_directory();
     }
     Ok(if check {
         Command::CheckConfig(options)
@@ -134,5 +151,22 @@ mod tests {
         assert!(parse(&["--config"]).is_err());
         assert!(parse(&["--bogus"]).is_err());
         assert!(matches!(parse(&["-V"]), Ok(Command::Version)));
+    }
+
+    #[test]
+    fn working_directory_defaults_to_launch_dir_and_can_be_overridden() {
+        let Ok(Command::Run(options)) = parse(&[]) else {
+            panic!("expected run");
+        };
+        // Tests run from the crate directory, which is a real, non-root directory.
+        assert_eq!(options.working_directory, std::env::current_dir().ok());
+        let tmp = std::env::temp_dir();
+        let tmp_arg = tmp.to_string_lossy().into_owned();
+        let Ok(Command::Run(options)) = parse(&["-d", &tmp_arg]) else {
+            panic!("expected run");
+        };
+        assert_eq!(options.working_directory, Some(tmp));
+        assert!(parse(&["--working-directory", "/definitely/not/here"]).is_err());
+        assert!(parse(&["--working-directory"]).is_err());
     }
 }

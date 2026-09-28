@@ -82,7 +82,12 @@ impl App {
             .cloned()
             .unwrap_or_default();
         let env: Vec<(String, String)> = profile.env.into_iter().collect();
-        let cwd = profile.cwd.as_deref().map(std::path::Path::new);
+        // Profile cwd wins; otherwise start where the terminal was launched.
+        let cwd = profile.cwd.as_deref().map(std::path::Path::new).or(self
+            .options
+            .working_directory
+            .as_deref()
+            .filter(|dir| dir.is_dir()));
         let shell = resolve_profile(
             &profile.executable,
             &profile.args,

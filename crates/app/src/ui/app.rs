@@ -32,6 +32,9 @@ use crate::sound::{Cue, SoundPlayer, SoundSettings};
 pub struct Options {
     pub config_dir: Option<PathBuf>,
     pub safe_mode: bool,
+    /// Where new shells start unless their profile sets `cwd`. Defaults to
+    /// the directory the terminal was launched from (see `platform::paths`).
+    pub working_directory: Option<PathBuf>,
 }
 
 /// Events from worker threads, delivered through one unbounded but

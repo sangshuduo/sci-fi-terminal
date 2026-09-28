@@ -44,7 +44,8 @@ Status as of 2026-09-22, branch `feat/terminal-foundation`. This records what ex
   - A versioned TOML schema with range validation. Diagnostics name the file and field.
   - Layers apply in precedence order. Files are written atomically and the previous version is kept as a backup.
   - Four original themes: Graphite, Daylight, Signal and High contrast.
-  - Command-line flags: `--check-config`, `--config`, `--safe-mode`.
+  - Command-line flags: `--check-config`, `--config`, `--safe-mode`, `-d/--working-directory`.
+  - New shells start in the directory the terminal was launched from. When launched from Finder, the Dock or a desktop menu (working directory `/`), or when that directory no longer exists, they start in home. `-d DIR` overrides the launch directory, and a profile `cwd` overrides both.
 - **Panels.**
   - Panels come from a compile-time registry and receive a scoped, read-only context.
   - The CPU/memory panel samples on its own worker thread and only while visible: every 1 s or more while focused, every 5 s or more otherwise.
