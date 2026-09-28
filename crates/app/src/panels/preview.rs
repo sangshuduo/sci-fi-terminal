@@ -91,9 +91,14 @@ fn open_regular(path: &Path) -> Result<File, String> {
         use std::os::unix::fs::OpenOptionsExt;
         options.custom_flags(libc::O_NONBLOCK);
     }
-    let file = options
-        .open(path)
-        .map_err(|err| format!("Cannot open: {}", err.kind()))?;
+    let file = options.open(path).map_err(|err| {
+        // Windows refuses to open a directory at all; report it like Unix does.
+        if std::fs::metadata(path).is_ok_and(|meta| !meta.is_file()) {
+            "Not a regular file".to_owned()
+        } else {
+            format!("Cannot open: {}", err.kind())
+        }
+    })?;
     let is_file = file.metadata().is_ok_and(|meta| meta.is_file());
     if !is_file {
         return Err("Not a regular file".into());
