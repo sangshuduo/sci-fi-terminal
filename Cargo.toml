@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = ["crates/terminal-core", "crates/platform", "crates/app"]
+exclude = ["third_party/block"]
 
 [workspace.package]
 version = "0.1.0"
@@ -31,3 +32,10 @@ unsafe_code = "deny"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
+
+# block 0.1.6 (via iced -> wgpu-hal -> metal) declares an extern static of an
+# uninhabited type, which future Rust will reject. Upstream is unmaintained and
+# wgpu still depends on it, so a one-line patched copy is vendored. See
+# third_party/block/PATCHED.md; remove this once wgpu drops `block`.
+[patch.crates-io]
+block = { path = "third_party/block" }

@@ -24,6 +24,12 @@ following third-party data. Provenance, versions and hashes are recorded in
 - **Changes:** converted to a compact binary polyline format by
   `scripts/convert_coastline.py`; no geometry edits.
 
+## Patched `block` 0.1.6 (vendored)
+
+- **Path:** `third_party/block` (used via `[patch.crates-io]` in `Cargo.toml`)
+- **Source:** https://crates.io/crates/block/0.1.6 — © Steven Sheldon, MIT licence
+- **Changes:** two mechanical edits so the crate builds without future-incompatibility or lint warnings; see `third_party/block/PATCHED.md`.
+
 ## Rust crates
 
 Rust dependencies are listed in `Cargo.lock` with their licences recorded in
