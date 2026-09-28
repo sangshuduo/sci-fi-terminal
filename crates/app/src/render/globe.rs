@@ -8,8 +8,10 @@
 use std::f32::consts::PI;
 use std::sync::OnceLock;
 
+use iced::alignment::Vertical;
 use iced::mouse::Cursor;
 use iced::widget::canvas::{self, Cache, Frame, Geometry, Path, Stroke};
+use iced::widget::text::{Alignment, Shaping};
 use iced::{Color, Point, Rectangle, Renderer};
 
 use super::cells::{mix, to_color};
@@ -20,6 +22,13 @@ const COASTLINE_ASSET: &[u8] = include_bytes!("../../../../assets/geo/coastline-
 pub const ROTATION_SPEED: f32 = 6.0;
 /// Most markers drawn; further peers are counted but not plotted.
 pub const MAX_MARKERS: usize = 64;
+/// Peers that get a process-name label; the rest are dots only.
+pub const MAX_LABELS: usize = 8;
+/// Distinct process names spelled out in one label before "+N".
+const NAMES_PER_LABEL: usize = 2;
+/// Characters kept per process name in a label.
+const LABEL_NAME_CHARS: usize = 14;
+const LABEL_SIZE: f32 = 10.0;
 /// View tilt so both hemispheres are visible.
 const TILT_DEGREES: f32 = 18.0;
 /// Seconds per home-spot flash.
@@ -98,6 +107,14 @@ pub struct Marker {
     pub longitude: f32,
 }
 
+/// A plotted peer and the processes talking to it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Peer {
+    pub marker: Marker,
+    /// Owning process names, e.g. "firefox, curl +2"; `None` when unknown.
+    pub label: Option<String>,
+}
+
 /// Rotation state owned by the app; the cache is cleared on each tick.
 pub struct GlobeState {
     pub rotation_degrees: f32,
@@ -124,7 +141,8 @@ impl GlobeState {
         self.cache.clear();
     }
 
-    /// Advance the home-spot pulse (one flash per [`FLASH_PERIOD`] seconds).
+    /// Advance the pulse shared by the home spot and peer labels (one flash
+    /// per [`FLASH_PERIOD`] seconds).
     pub fn pulse(&mut self, seconds: f32) {
         self.flash_phase = (self.flash_phase + seconds.clamp(0.0, 0.1) / FLASH_PERIOD).fract();
         self.cache.clear();
@@ -150,7 +168,7 @@ impl GlobeState {
 
 pub struct GlobeView<'a> {
     pub state: &'a GlobeState,
-    pub markers: &'a [Marker],
+    pub markers: &'a [Peer],
     /// This machine's location from the opt-in public IP lookup.
     pub home: Option<Marker>,
     pub theme: &'a Theme,
@@ -263,7 +281,11 @@ impl GlobeView<'_> {
         to_screen: &impl Fn((f32, f32)) -> Point,
     ) {
         let hot = to_color(self.theme.colors.error);
-        for marker in self.markers.iter().take(MAX_MARKERS) {
+        let text_color = to_color(self.theme.colors.foreground);
+        let alpha = label_alpha(self.state.flash_phase);
+        let mut labelled = 0;
+        for peer in self.markers.iter().take(MAX_MARKERS) {
+            let marker = peer.marker;
             let (x, y, visible) = project(
                 lon0,
                 lat0,
@@ -276,8 +298,37 @@ impl GlobeView<'_> {
             let at = to_screen((x, y));
             frame.fill(&Path::circle(at, 5.0), Color { a: 0.25, ..hot });
             frame.fill(&Path::circle(at, 2.2), hot);
+            if let Some(label) = peer.label.as_ref().filter(|_| labelled < MAX_LABELS) {
+                labelled += 1;
+                frame.fill_text(label_text(label, at, frame.size().width, text_color, alpha));
+            }
         }
     }
+}
+
+/// Label to the right of the dot, or to its left when it would run off the canvas.
+fn label_text(label: &str, at: Point, width: f32, color: Color, alpha: f32) -> canvas::Text {
+    let estimated = label.chars().count() as f32 * LABEL_SIZE * 0.62;
+    let (x, align_x) = if at.x + 8.0 + estimated <= width {
+        (at.x + 8.0, Alignment::Left)
+    } else {
+        (at.x - 8.0, Alignment::Right)
+    };
+    canvas::Text {
+        content: label.to_owned(),
+        position: Point::new(x, at.y),
+        color: Color { a: alpha, ..color },
+        size: LABEL_SIZE.into(),
+        align_x,
+        align_y: Vertical::Center,
+        shaping: Shaping::Advanced,
+        ..canvas::Text::default()
+    }
+}
+
+/// Labels pulse with the home spot; at phase 0 (reduced motion) they are steady.
+fn label_alpha(phase: f32) -> f32 {
+    0.35 + 0.65 * (phase * 2.0 * PI).cos().abs()
 }
 
 /// Stroke the front-facing runs of many polylines as ONE path, so the frame
@@ -383,20 +434,64 @@ fn graticule() -> Vec<Vec<(f32, f32)>> {
     meridians.chain(parallels).collect()
 }
 
-/// Deduplicate located peers (≈1° grid) and cap the number drawn.
-pub fn markers_from(locations: impl Iterator<Item = (f64, f64)>) -> Vec<Marker> {
-    let mut seen = std::collections::HashSet::new();
-    locations
-        .filter(|(lat, lon)| {
-            lat.is_finite() && lon.is_finite() && lat.abs() <= 90.0 && lon.abs() <= 180.0
-        })
-        .filter(|(lat, lon)| seen.insert((lat.round() as i32, lon.round() as i32)))
-        .take(MAX_MARKERS)
-        .map(|(lat, lon)| Marker {
-            latitude: lat as f32,
-            longitude: lon as f32,
+/// Deduplicate located peers (≈1° grid), cap the number drawn, and gather
+/// the distinct owning process names of each into one label.
+pub fn markers_from<'a>(locations: impl Iterator<Item = (f64, f64, Option<&'a str>)>) -> Vec<Peer> {
+    let mut cells: std::collections::HashMap<(i32, i32), usize> = Default::default();
+    let mut peers: Vec<(Marker, Vec<&str>)> = Vec::new();
+    let valid = |lat: f64, lon: f64| {
+        lat.is_finite() && lon.is_finite() && lat.abs() <= 90.0 && lon.abs() <= 180.0
+    };
+    for (lat, lon, name) in locations.filter(|(lat, lon, _)| valid(*lat, *lon)) {
+        let cell = (lat.round() as i32, lon.round() as i32);
+        let index = match cells.get(&cell) {
+            Some(&index) => index,
+            None if peers.len() < MAX_MARKERS => {
+                let marker = Marker {
+                    latitude: lat as f32,
+                    longitude: lon as f32,
+                };
+                peers.push((marker, Vec::new()));
+                cells.insert(cell, peers.len() - 1);
+                peers.len() - 1
+            }
+            None => continue,
+        };
+        let names = &mut peers[index].1;
+        if let Some(name) = name.filter(|name| !names.contains(name)) {
+            names.push(name);
+        }
+    }
+    peers
+        .into_iter()
+        .map(|(marker, names)| Peer {
+            marker,
+            label: label_for(&names),
         })
         .collect()
+}
+
+fn label_for(names: &[&str]) -> Option<String> {
+    let shown: Vec<String> = names
+        .iter()
+        .take(NAMES_PER_LABEL)
+        .map(|name| shorten(name))
+        .collect();
+    let rest = names.len().saturating_sub(NAMES_PER_LABEL);
+    match (shown.is_empty(), rest) {
+        (true, _) => None,
+        (false, 0) => Some(shown.join(", ")),
+        (false, rest) => Some(format!("{} +{rest}", shown.join(", "))),
+    }
+}
+
+fn shorten(name: &str) -> String {
+    if name.chars().count() <= LABEL_NAME_CHARS {
+        return name.to_owned();
+    }
+    let mut out: String = name.chars().take(LABEL_NAME_CHARS - 1).collect();
+    out.push('…');
+    out
 }
 
 #[cfg(test)]
@@ -472,15 +567,46 @@ mod tests {
     #[test]
     fn markers_are_deduplicated_validated_and_capped() {
         let points = vec![
-            (40.7, -74.0),
-            (40.71, -74.01),
-            (f64::NAN, 0.0),
-            (95.0, 0.0),
-            (51.5, -0.1),
+            (40.7, -74.0, None),
+            (40.71, -74.01, None),
+            (f64::NAN, 0.0, None),
+            (95.0, 0.0, None),
+            (51.5, -0.1, None),
         ];
         let markers = markers_from(points.into_iter());
         assert_eq!(markers.len(), 2);
-        let many = (0..200).map(|i| (f64::from(i % 90), f64::from(i) - 100.0));
+        assert!(markers.iter().all(|peer| peer.label.is_none()));
+        let many = (0..200).map(|i| (f64::from(i % 90), f64::from(i) - 100.0, None));
         assert!(markers_from(many).len() <= MAX_MARKERS);
+    }
+
+    #[test]
+    fn labels_merge_distinct_process_names_per_place() {
+        let points = vec![
+            (43.7, -79.4, Some("firefox")),
+            (43.71, -79.41, Some("firefox")),
+            (43.7, -79.4, Some("curl")),
+            (43.7, -79.4, Some("com.apple.WebKit.Networking")),
+            (43.7, -79.4, None),
+            (51.5, -0.1, Some("ssh")),
+        ];
+        let peers = markers_from(points.into_iter());
+        assert_eq!(peers.len(), 2);
+        assert_eq!(peers[0].label.as_deref(), Some("firefox, curl +1"));
+        assert_eq!(peers[1].label.as_deref(), Some("ssh"));
+        assert_eq!(shorten("com.apple.WebKit.Networking").chars().count(), 14);
+    }
+
+    #[test]
+    fn labels_pulse_and_stay_readable() {
+        assert_eq!(label_alpha(0.0), 1.0, "steady under reduced motion");
+        for step in 0..20 {
+            let alpha = label_alpha(step as f32 / 20.0);
+            assert!((0.35..=1.0).contains(&alpha));
+        }
+        let near_edge = label_text("firefox", Point::new(195.0, 50.0), 200.0, Color::WHITE, 1.0);
+        assert_eq!(near_edge.align_x, Alignment::Right);
+        let roomy = label_text("firefox", Point::new(20.0, 50.0), 200.0, Color::WHITE, 1.0);
+        assert_eq!(roomy.align_x, Alignment::Left);
     }
 }

@@ -22,7 +22,7 @@ use crate::config::{
 };
 use crate::osk::{Keyboard, Layout, OskMessage, builtin_layout, load_user_layouts};
 use crate::panels::{BuiltinPanel, MonitorSample, MonitorWorker, PanelMsg, PanelRegistry};
-use crate::render::globe::{GlobeState, Marker, markers_from};
+use crate::render::globe::{GlobeState, Marker, Peer, markers_from};
 use crate::render::{CellMetrics, TerminalEvent};
 use crate::session::Notify;
 use crate::sound::{Cue, SoundPlayer, SoundSettings};
@@ -122,7 +122,7 @@ pub struct App {
     /// Started on first hover; stops when dropped.
     pub(super) preview_loader: Option<crate::panels::preview::PreviewLoader>,
     pub(super) globe: GlobeState,
-    pub(super) globe_markers: Vec<Marker>,
+    pub(super) globe_markers: Vec<Peer>,
     pub(super) last_globe_tick: Option<std::time::Instant>,
     /// Licence attribution for the GeoIP data in use (DB-IP requires one).
     pub(super) geoip_credit: Option<&'static str>,
@@ -226,7 +226,7 @@ impl App {
     /// Keyboard and window events, plus a ≤ 30 Hz tick only while the globe
     /// is visibly rotating. Terminal redraws are driven by damage only.
     pub fn subscription(&self) -> Subscription<Message> {
-        let globe = if self.globe_rotating() || self.home_flashing() {
+        let globe = if self.globe_rotating() || self.globe_flashing() {
             iced::time::every(GLOBE_FRAME).map(Message::GlobeTick)
         } else {
             Subscription::none()
@@ -251,9 +251,11 @@ impl App {
         self.globe_can_animate() && self.config.panels.network.globe_rotate
     }
 
-    /// Whether the home spot should flash right now.
-    pub(super) fn home_flashing(&self) -> bool {
-        self.globe_can_animate() && self.globe_home().is_some()
+    /// Whether the home spot or peer labels should flash right now.
+    pub(super) fn globe_flashing(&self) -> bool {
+        self.globe_can_animate()
+            && (self.globe_home().is_some()
+                || self.globe_markers.iter().any(|peer| peer.label.is_some()))
     }
 
     /// Located home position from the opt-in public IP lookup.
@@ -318,7 +320,7 @@ impl App {
                 if self.globe_rotating() {
                     self.globe.advance(elapsed);
                 }
-                if self.home_flashing() {
+                if self.globe_flashing() {
                     self.globe.pulse(elapsed);
                 } else {
                     self.globe.hold_pulse();
@@ -564,11 +566,14 @@ impl App {
     /// Rebuild peer markers from the latest located connections. When the
     /// globe is not rotating, turn it to face the first peer.
     pub(super) fn refresh_globe_markers(&mut self) {
-        let located = match &self.monitor.connections {
+        let located: Vec<(f64, f64, Option<&str>)> = match &self.monitor.connections {
             Some(Ok(list)) => list
                 .iter()
-                .filter_map(|view| view.location.as_ref())
-                .filter_map(|loc| Some((loc.latitude?, loc.longitude?)))
+                .filter_map(|view| {
+                    let location = view.location.as_ref()?;
+                    let name = view.process.as_deref();
+                    Some((location.latitude?, location.longitude?, name))
+                })
                 .collect(),
             _ => Vec::new(),
         };
@@ -577,7 +582,7 @@ impl App {
             self.globe_markers = markers;
             self.globe.cache.clear();
         }
-        if !self.home_flashing() {
+        if !self.globe_flashing() {
             self.globe.hold_pulse();
         }
         if !self.globe_rotating() {
@@ -585,7 +590,7 @@ impl App {
             // A still globe faces home when known, otherwise the first peer.
             let target = self
                 .globe_home()
-                .or_else(|| self.globe_markers.first().copied());
+                .or_else(|| self.globe_markers.first().map(|peer| peer.marker));
             self.globe.face(target);
         }
     }
