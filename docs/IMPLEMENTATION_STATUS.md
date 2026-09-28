@@ -82,9 +82,9 @@ Status as of 2026-09-22, branch `feat/terminal-foundation`. This records what ex
   - The flashing itself has not been seen on screen yet: the display was asleep when this was tested.
 - **Bundled GeoIP** (ADR-008)
   - The DB-IP City Lite database (CC BY 4.0) is pinned by month and SHA-256 in `assets/geo/dbip-city-lite.toml`. `scripts/fetch-geoip.sh` fetches and verifies it; the 121 MB file itself is not committed.
-  - `.github/workflows/release.yml` packages it next to the binary for Linux, macOS and Windows, in unsigned developer-preview archives with checksums, and publishes on `v*` tags.
+  - `.github/workflows/release.yml` packages it next to the binary for Linux, macOS and Windows, in unsigned developer-preview archives with checksums. It runs when the `VERSION` file changes on `main` and publishes a pre-release tagged `v<VERSION>` (skipped if that tag exists); see DEVELOPMENT §Cutting a release.
   - With the setting left empty, the app finds the bundled file automatically. The Network panel shows "IP Geolocation by DB-IP", and the credit is also in `THIRD_PARTY_NOTICES.md`.
-  - The release workflow has not run yet, because no tag has been pushed.
+  - The release workflow has not run yet. `VERSION` is `0.1.0`, so merging PR #1 to `main` will publish v0.1.0.
 - **Application icon** (`assets/icons/`)
   - Original MIT artwork: an amber wireframe globe behind a `›_` prompt, with a teal "you are here" dot. A simplified SVG is used for 16–48 px.
   - `scripts/build-icons.sh` renders the PNG sizes, `.ico`, `.icns` and a raw 64 px RGBA window icon; the outputs are committed.
