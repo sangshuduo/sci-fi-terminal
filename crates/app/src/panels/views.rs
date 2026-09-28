@@ -130,6 +130,12 @@ pub(super) fn network<'a, M: 'a>(
     if let Some(globe) = globe {
         col = col.push(globe_view(globe, sample));
     }
+    // Connections sit right under the globe, next to the peers it plots.
+    match &sample.connections {
+        None => {}
+        Some(Err(err)) => col = col.push(text(err.clone()).size(11)),
+        Some(Ok(list)) => col = col.push(connections(list)),
+    }
     if sample.interfaces.is_empty() {
         col = col.push(text("No active interfaces").size(12));
     }
@@ -138,11 +144,6 @@ pub(super) fn network<'a, M: 'a>(
     }
     if let Some(status) = &sample.geoip_status {
         col = col.push(text(status.clone()).size(10));
-    }
-    match &sample.connections {
-        None => {}
-        Some(Err(err)) => col = col.push(text(err.clone()).size(11)),
-        Some(Ok(list)) => col = col.push(connections(list)),
     }
     col.into()
 }
