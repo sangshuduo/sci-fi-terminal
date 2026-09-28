@@ -70,11 +70,13 @@ impl HomeLocation {
     }
 }
 
-/// A connection plus its optional offline GeoIP result.
+/// A connection plus its optional offline GeoIP result and owning process.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConnectionView {
     pub connection: Connection,
     pub location: Option<GeoLocation>,
+    /// Name of the first owning pid, when the OS lets us see it.
+    pub process: Option<String>,
 }
 
 /// Everything sampled in one tick. Fields not in the plan keep their last value.
@@ -218,7 +220,12 @@ impl Collector {
         }
         let listed = list_connections();
         let geoip = self.geoip.as_mut().and_then(|(_, db)| db.as_mut().ok());
-        self.sample.connections = Some(listed.map(|list| locate(list, geoip)));
+        let mut views = listed.map(|list| locate(list, geoip));
+        if let Ok(views) = &mut views {
+            let sampler = self.processes.get_or_insert_with(ProcessSampler::new);
+            name_owners(views, sampler);
+        }
+        self.sample.connections = Some(views);
     }
 
     /// Opt-in public IP lookup: at most every 30 min (5 min after a failure),
@@ -326,9 +333,29 @@ fn locate(list: Vec<Connection>, mut geoip: Option<&mut GeoIp>) -> Vec<Connectio
             ConnectionView {
                 connection,
                 location,
+                process: None,
             }
         })
         .collect()
+}
+
+/// Fill in owning process names for connections with a remote peer.
+fn name_owners(views: &mut [ConnectionView], sampler: &mut ProcessSampler) {
+    let mut pids: Vec<u32> = views
+        .iter()
+        .filter(|view| view.connection.remote.is_some())
+        .filter_map(|view| view.connection.pids.first().copied())
+        .collect();
+    pids.sort_unstable();
+    pids.dedup();
+    let names = sampler.names_of(&pids);
+    for view in views.iter_mut() {
+        view.process = view
+            .connection
+            .pids
+            .first()
+            .and_then(|pid| names.get(pid).cloned());
+    }
 }
 
 #[cfg(test)]
@@ -353,6 +380,23 @@ mod tests {
             assert!(Instant::now() < deadline, "no sample");
             std::thread::sleep(Duration::from_millis(20));
         }
+    }
+
+    /// Live: `cargo test -p sci-fi-terminal owners_live -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "reads this machine's real sockets"]
+    fn owners_live() {
+        let mut views = locate(list_connections().expect("connections"), None);
+        name_owners(&mut views, &mut ProcessSampler::new());
+        let remote: Vec<_> = views
+            .iter()
+            .filter(|v| v.connection.remote.is_some())
+            .collect();
+        for view in remote.iter().take(15) {
+            println!("{}", super::super::views::describe(view));
+        }
+        let named = remote.iter().filter(|v| v.process.is_some()).count();
+        println!("{named}/{} remote connections named", remote.len());
     }
 
     #[test]

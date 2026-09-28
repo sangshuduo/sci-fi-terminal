@@ -90,6 +90,7 @@ Status as of 2026-09-22, branch `feat/terminal-foundation`. This records what ex
   - `scripts/build-icons.sh` renders the PNG sizes, `.ico`, `.icns` and a raw 64 px RGBA window icon; the outputs are committed.
   - Window and taskbar icon on Linux and Windows comes from the embedded RGBA. On Windows, `crates/app/build.rs` also embeds the `.ico` in the `.exe` (not yet verified on Windows; CI builds it).
   - macOS: `scripts/bundle-macos.sh` builds an unsigned `sci-fi-terminal.app` with the `.icns` and the GeoIP database. The release workflow ships it; Linux archives carry a `.desktop` file and a 256 px PNG.
+- **Connection owners.** Each Network panel connection line names its owning process, e.g. `tcp 1.2.3.4:443 · Norwell, US · firefox (4211)`. Only the owning pids are refreshed, and only their names are read (no command lines). Owners the OS hides from an unprivileged user show as `pid N`. In a live check on macOS, 73 of 73 remote connections were named.
 - **Peer globe** (`render/globe.rs`, ADR-006)
   - Orthographic wireframe globe built from the bundled public-domain Natural Earth coastlines (provenance recorded in `docs/provenance.csv`), with markers for GeoIP-located peers.
   - Measured on an Apple Silicon Mac, release build, all monitoring panels visible (one-off readings, not a benchmark): about 3–4% CPU with the globe still, about 7% while it rotates. The first version cost about 11%. That dropped after coastline points were precomputed as unit vectors, each layer was drawn as a single path, and the tick was lowered to 20 Hz.

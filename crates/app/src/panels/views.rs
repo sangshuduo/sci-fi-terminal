@@ -243,10 +243,15 @@ pub(super) fn describe(view: &ConnectionView) -> String {
             (None, None) => None,
         }
     });
-    match place {
-        Some(place) => format!("{protocol} {remote} · {place}"),
-        None => format!("{protocol} {remote}"),
-    }
+    let owner = view.connection.pids.first().map(|pid| match &view.process {
+        Some(name) => format!("{} ({pid})", short_name(name)),
+        None => format!("pid {pid}"),
+    });
+    [Some(format!("{protocol} {remote}")), place, owner]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join(" · ")
 }
 
 #[cfg(test)]
@@ -255,15 +260,24 @@ mod tests {
     use crate::monitor::{Connection, GeoLocation};
 
     fn view(location: Option<GeoLocation>) -> ConnectionView {
+        with_owner(location, None, vec![])
+    }
+
+    fn with_owner(
+        location: Option<GeoLocation>,
+        process: Option<&str>,
+        pids: Vec<u32>,
+    ) -> ConnectionView {
         ConnectionView {
             connection: Connection {
                 protocol: Protocol::Tcp,
                 local: "10.0.0.2:5000".parse().expect("addr"),
                 remote: Some("93.184.216.34:443".parse().expect("addr")),
                 state: ConnectionState::Established,
-                pids: vec![42],
+                pids,
             },
             location,
+            process: process.map(str::to_owned),
         }
     }
 
@@ -289,6 +303,19 @@ mod tests {
         assert_eq!(
             describe(&view(Some(located))),
             "tcp 93.184.216.34:443 · Norwell, US"
+        );
+    }
+
+    #[test]
+    fn describes_the_owning_process_when_known() {
+        assert_eq!(
+            describe(&with_owner(None, Some("firefox"), vec![4211, 7])),
+            "tcp 93.184.216.34:443 · firefox (4211)"
+        );
+        assert_eq!(
+            describe(&with_owner(None, None, vec![88])),
+            "tcp 93.184.216.34:443 · pid 88",
+            "hidden owner still shows its pid"
         );
     }
 }

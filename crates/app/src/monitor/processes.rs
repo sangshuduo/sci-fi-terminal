@@ -5,6 +5,7 @@
 //! The working directory is fetched only on explicit request for one pid.
 
 use std::cmp::Ordering;
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
@@ -69,6 +70,30 @@ impl ProcessSampler {
             })
             .collect();
         top_n(all, limit)
+    }
+
+    /// Names of the given pids (connection owners). Refreshes only those pids
+    /// and only their basic data; pids the OS hides are simply absent.
+    pub fn names_of(&mut self, pids: &[u32]) -> HashMap<u32, String> {
+        if pids.is_empty() {
+            return HashMap::new();
+        }
+        let wanted: Vec<Pid> = pids.iter().copied().map(Pid::from_u32).collect();
+        self.system.refresh_processes_specifics(
+            ProcessesToUpdate::Some(&wanted),
+            true,
+            ProcessRefreshKind::nothing(),
+        );
+        wanted
+            .iter()
+            .filter_map(|pid| {
+                let process = self.system.process(*pid)?;
+                Some((
+                    pid.as_u32(),
+                    sanitize_name(&process.name().to_string_lossy()),
+                ))
+            })
+            .collect()
     }
 
     /// Current working directory of a pid, if the OS exposes it (used by the
@@ -139,6 +164,15 @@ mod tests {
         assert!(top_n(Vec::new(), 5).is_empty());
         let v = vec![p(1, f32::NAN, 1), p(2, 2.0, 1)];
         assert_eq!(top_n(v, 5).len(), 2);
+    }
+
+    #[test]
+    fn names_of_resolves_own_pid_and_skips_unknown() {
+        let own = std::process::id();
+        let names = ProcessSampler::new().names_of(&[own, u32::MAX - 1]);
+        assert!(names.get(&own).is_some_and(|name| !name.is_empty()));
+        assert!(!names.contains_key(&(u32::MAX - 1)));
+        assert!(ProcessSampler::new().names_of(&[]).is_empty());
     }
 
     #[test]
