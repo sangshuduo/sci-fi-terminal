@@ -25,6 +25,8 @@ pub struct Config {
     #[serde(default)]
     pub layout: LayoutSettings,
     #[serde(default)]
+    pub window: WindowSettings,
+    #[serde(default)]
     pub panels: Panels,
     #[serde(default)]
     pub effects: Effects,
@@ -48,6 +50,7 @@ impl Default for Config {
             terminal: TerminalSettings::default(),
             profiles,
             layout: LayoutSettings::default(),
+            window: WindowSettings::default(),
             panels: Panels::default(),
             effects: Effects::default(),
             sound: SoundSettingsConfig::default(),
@@ -149,6 +152,30 @@ impl Default for LayoutSettings {
             preset: LayoutPreset::Focus,
             restore: true,
             max_sessions: 8,
+        }
+    }
+}
+
+/// Window size at launch, in logical pixels. Read once, before the window opens.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct WindowSettings {
+    pub width: u32,
+    pub height: u32,
+}
+
+impl WindowSettings {
+    pub const MIN_WIDTH: u32 = 640;
+    pub const MAX_WIDTH: u32 = 7680;
+    pub const MIN_HEIGHT: u32 = 400;
+    pub const MAX_HEIGHT: u32 = 4320;
+}
+
+impl Default for WindowSettings {
+    fn default() -> Self {
+        Self {
+            width: 1100,
+            height: 700,
         }
     }
 }

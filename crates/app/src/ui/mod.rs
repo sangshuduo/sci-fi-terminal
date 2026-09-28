@@ -13,4 +13,3 @@ pub mod style;
 mod view;
 
 pub use app::{App, AppEvent, Message, Options};
-pub use commands::INITIAL_WINDOW;

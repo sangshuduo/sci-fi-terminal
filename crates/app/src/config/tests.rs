@@ -186,6 +186,8 @@ fn range_rules_rejected() {
         ),
         ("[layout]\nmax_sessions = 0", "layout.max_sessions"),
         ("[layout]\nmax_sessions = 9", "layout.max_sessions"),
+        ("[window]\nwidth = 639", "window.width"),
+        ("[window]\nheight = 4321", "window.height"),
         (
             "[terminal]\nscrollback_lines = 100001",
             "terminal.scrollback_lines",

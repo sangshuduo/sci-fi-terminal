@@ -47,6 +47,10 @@ preset = "focus"
 restore = true
 max_sessions = 8
 
+[window]
+width = 1100         # launch size in logical pixels, 640..=7680
+height = 700         # 400..=4320; takes effect at the next launch
+
 [panels.metrics]
 enabled = true
 interval_ms = 1000

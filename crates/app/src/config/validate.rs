@@ -3,7 +3,7 @@
 use std::fmt;
 use std::path::PathBuf;
 
-use super::schema::{Config, KeyBinding, SCHEMA_VERSION};
+use super::schema::{Config, KeyBinding, SCHEMA_VERSION, WindowSettings};
 
 /// A single validation problem tied to a dotted field path.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -152,6 +152,21 @@ fn validate_layout_panels_effects(config: &Config, out: &mut Vec<Diagnostic>) {
         u64::from(config.layout.max_sessions),
         1,
         8,
+    );
+    let window = &config.window;
+    check_int(
+        out,
+        "window.width",
+        u64::from(window.width),
+        u64::from(WindowSettings::MIN_WIDTH),
+        u64::from(WindowSettings::MAX_WIDTH),
+    );
+    check_int(
+        out,
+        "window.height",
+        u64::from(window.height),
+        u64::from(WindowSettings::MIN_HEIGHT),
+        u64::from(WindowSettings::MAX_HEIGHT),
     );
     let interval = config.panels.metrics.interval_ms;
     if interval < 1000 {

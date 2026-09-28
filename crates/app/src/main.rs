@@ -3,8 +3,8 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use sci_fi_terminal::config::{ConfigPaths, load_effective};
-use sci_fi_terminal::ui::{App, INITIAL_WINDOW, Options};
+use sci_fi_terminal::config::{ConfigPaths, WindowSettings, load_effective};
+use sci_fi_terminal::ui::{App, Options};
 
 const USAGE: &str = "\
 Usage: sci-fi-terminal [OPTIONS]
@@ -79,13 +79,25 @@ fn window_icon() -> Option<iced::window::Icon> {
     .ok()
 }
 
-fn check_config(options: &Options) -> ExitCode {
-    let paths = options
+fn config_paths(options: &Options) -> Option<ConfigPaths> {
+    options
         .config_dir
         .clone()
         .map(ConfigPaths::from_dir)
-        .or_else(ConfigPaths::platform_default);
-    let Some(paths) = paths else {
+        .or_else(ConfigPaths::platform_default)
+}
+
+/// `[window]` from the effective configuration; invalid files fall back to
+/// defaults (the app reports their diagnostics once it is running).
+fn launch_size(options: &Options) -> iced::Size {
+    let window = config_paths(options).map_or_else(WindowSettings::default, |paths| {
+        load_effective(&paths, options.safe_mode).config.window
+    });
+    iced::Size::new(window.width as f32, window.height as f32)
+}
+
+fn check_config(options: &Options) -> ExitCode {
+    let Some(paths) = config_paths(options) else {
         eprintln!("no configuration directory is available on this system");
         return ExitCode::FAILURE;
     };
@@ -125,6 +137,7 @@ fn main() -> ExitCode {
         Command::CheckConfig(options) => return check_config(&options),
         Command::Run(options) => options,
     };
+    let size = launch_size(&options);
     let result = iced::application(move || App::boot(options.clone()), App::update, App::view)
         .title(App::title)
         .theme(App::theme)
@@ -132,7 +145,7 @@ fn main() -> ExitCode {
         .exit_on_close_request(false)
         .antialiasing(true)
         .window(iced::window::Settings {
-            size: INITIAL_WINDOW.into(),
+            size,
             icon: window_icon(),
             ..iced::window::Settings::default()
         })

@@ -21,9 +21,6 @@ use crate::render::CellMetrics;
 use crate::session::{SessionCommand, SessionConfig, spawn_session};
 use crate::sound::Cue;
 
-/// Initial window size in logical pixels; `main.rs` opens the window at this size.
-pub const INITIAL_WINDOW: (f32, f32) = (1100.0, 700.0);
-
 impl App {
     pub(super) fn session_count(&self) -> usize {
         self.tabs.iter().map(|tab| tab.panes.len()).sum()
@@ -59,8 +56,12 @@ impl App {
         let left = self.is_shown(BuiltinPanel::Directory);
         let column = super::view::PANEL_WIDTH + 8.0;
         let panel = column * (f32::from(u8::from(right)) + f32::from(u8::from(left)));
+        let window = self.config.window;
         let (width, height) = focused.map_or(
-            (INITIAL_WINDOW.0 - panel - 16.0, INITIAL_WINDOW.1 - 80.0),
+            (
+                window.width as f32 - panel - 16.0,
+                window.height as f32 - 80.0,
+            ),
             |size| (size.width, size.height),
         );
         let (columns, rows) = self.cell.grid_for(

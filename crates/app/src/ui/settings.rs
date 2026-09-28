@@ -50,6 +50,8 @@ pub enum SettingsMsg {
     FontSize(f32),
     LineHeight(f32),
     ReducedMotion(bool),
+    WindowWidth(String),
+    WindowHeight(String),
     Effects(EffectsPreset),
     Cursor(CursorShape),
     CursorBlink(bool),
@@ -87,6 +89,7 @@ pub struct Settings {
     category: Category,
     query: String,
     scrollback_text: String,
+    window_text: (String, String),
     key_edits: BTreeMap<Action, String>,
     pub errors: Vec<String>,
 }
@@ -111,6 +114,7 @@ impl Settings {
             category: Category::Appearance,
             query: String::new(),
             scrollback_text: current.terminal.scrollback_lines.to_string(),
+            window_text: window_text(current),
             key_edits,
             errors: Vec::new(),
         }
@@ -130,6 +134,18 @@ impl Settings {
                 appearance.line_height = (height * 20.0).round() / 20.0
             }
             SettingsMsg::ReducedMotion(on) => appearance.reduced_motion = on,
+            SettingsMsg::WindowWidth(value) => {
+                if let Ok(width) = value.trim().parse() {
+                    self.draft.window.width = width;
+                }
+                self.window_text.0 = value;
+            }
+            SettingsMsg::WindowHeight(value) => {
+                if let Ok(height) = value.trim().parse() {
+                    self.draft.window.height = height;
+                }
+                self.window_text.1 = value;
+            }
             SettingsMsg::Effects(preset) => self.draft.effects.preset = preset,
             SettingsMsg::Cursor(shape) => terminal.cursor_shape = shape,
             SettingsMsg::CursorBlink(on) => terminal.cursor_blink = on,
@@ -148,6 +164,7 @@ impl Settings {
             SettingsMsg::ResetSection => self.reset_section(),
             SettingsMsg::ResetAll => {
                 self.draft = Config::default();
+                self.window_text = window_text(&self.draft);
                 self.key_edits.values_mut().for_each(String::clear);
                 self.reset_keys_to_defaults();
             }
@@ -184,7 +201,11 @@ impl Settings {
     fn reset_section(&mut self) {
         let defaults = Config::default();
         match self.category {
-            Category::Appearance => self.draft.appearance = defaults.appearance,
+            Category::Appearance => {
+                self.draft.appearance = defaults.appearance;
+                self.draft.window = defaults.window;
+                self.window_text = window_text(&self.draft);
+            }
             Category::Terminal => {
                 self.draft.terminal = defaults.terminal;
                 self.scrollback_text = self.draft.terminal.scrollback_lines.to_string();
@@ -414,6 +435,13 @@ fn section<'a, M: Clone + 'a>(
 
 type Rows<'a, M> = Vec<(&'static str, Element<'a, M>)>;
 
+fn window_text(config: &Config) -> (String, String) {
+    (
+        config.window.width.to_string(),
+        config.window.height.to_string(),
+    )
+}
+
 fn appearance_rows<'a, M: Clone + 'a>(
     settings: &'a Settings,
     themes: &'a [Theme],
@@ -466,6 +494,22 @@ fn appearance_rows<'a, M: Clone + 'a>(
             checkbox(a.reduced_motion)
                 .on_toggle(move |v| wrap(SettingsMsg::ReducedMotion(v)))
                 .into(),
+        ),
+        (
+            "Window size at launch",
+            row![
+                text_input("1100", &settings.window_text.0)
+                    .on_input(move |v| wrap(SettingsMsg::WindowWidth(v)))
+                    .width(72),
+                text("×"),
+                text_input("700", &settings.window_text.1)
+                    .on_input(move |v| wrap(SettingsMsg::WindowHeight(v)))
+                    .width(72),
+                text("px, next launch").size(12),
+            ]
+            .spacing(6)
+            .align_y(iced::Alignment::Center)
+            .into(),
         ),
     ]
 }
@@ -732,7 +776,21 @@ mod tests {
         let config = Config::default();
         let mut settings = Settings::open(&config, &Keymap::build(&[], false));
         settings.update(SettingsMsg::FontSize(20.0));
+        settings.update(SettingsMsg::WindowWidth("1600".into()));
+        assert_eq!(settings.draft.window.width, 1600);
         settings.update(SettingsMsg::ResetSection);
         assert_eq!(settings.draft.appearance, Config::default().appearance);
+        assert_eq!(settings.draft.window, Config::default().window);
+    }
+
+    #[test]
+    fn window_size_ignores_non_numbers_but_keeps_the_text() {
+        let config = Config::default();
+        let mut settings = Settings::open(&config, &Keymap::build(&[], false));
+        settings.update(SettingsMsg::WindowHeight("9x".into()));
+        assert_eq!(settings.draft.window.height, 700);
+        assert_eq!(settings.window_text.1, "9x");
+        settings.update(SettingsMsg::WindowHeight(" 900 ".into()));
+        assert_eq!(settings.draft.window.height, 900);
     }
 }
