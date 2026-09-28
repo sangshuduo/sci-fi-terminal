@@ -52,19 +52,21 @@ const HOME_RETRY: Duration = Duration::from_secs(5 * 60);
 pub struct HomeLocation {
     pub ip: IpAddr,
     pub location: Option<GeoLocation>,
+    /// Host of the endpoint that supplied `location`; `None` when it came
+    /// from the offline database.
+    pub source: Option<String>,
 }
 
 impl HomeLocation {
-    /// Short label such as `Toronto, CA`.
+    /// Short label such as `Toronto, Ontario, CA`.
     pub fn place(&self) -> Option<String> {
         let loc = self.location.as_ref()?;
         let country = loc.country_code.as_deref().or(loc.country.as_deref());
-        match (loc.city.as_deref(), country) {
-            (Some(city), Some(country)) => Some(format!("{city}, {country}")),
-            (Some(city), None) => Some(city.to_owned()),
-            (None, Some(country)) => Some(country.to_owned()),
-            (None, None) => None,
-        }
+        let parts: Vec<&str> = [loc.city.as_deref(), loc.region.as_deref(), country]
+            .into_iter()
+            .flatten()
+            .collect();
+        (!parts.is_empty()).then(|| parts.join(", "))
     }
 }
 
@@ -139,7 +141,7 @@ struct Collector {
     network: Option<NetworkSampler>,
     geoip: Option<(PathBuf, Result<GeoIp, String>)>,
     /// Last public IP result, the endpoint it came from, and when to retry.
-    public_ip: Option<(String, Result<IpAddr, String>, Instant)>,
+    public_ip: Option<(String, Result<public_ip::PublicIpInfo, String>, Instant)>,
     last_network: Option<Instant>,
     sample: MonitorSample,
 }
@@ -245,19 +247,38 @@ impl Collector {
             return;
         };
         match result {
-            Ok(ip) => {
-                let ip = *ip;
-                let geoip = self.geoip.as_mut().and_then(|(_, db)| db.as_mut().ok());
-                let location = geoip.and_then(|db| db.lookup(ip));
-                self.sample.home_status = location
-                    .is_none()
+            Ok(info) => {
+                let info = info.clone();
+                self.sample.home = Some(self.locate_home(info));
+                self.sample.home_status = self
+                    .sample
+                    .home
+                    .as_ref()
+                    .is_some_and(|home| home.location.is_none())
                     .then(|| "Your city needs a GeoIP database (Settings → Panels)".to_owned());
-                self.sample.home = Some(HomeLocation { ip, location });
             }
             Err(err) => {
                 self.sample.home = None;
                 self.sample.home_status = Some(err.clone());
             }
+        }
+    }
+
+    /// Prefer the endpoint's own location (ADR-009); otherwise ask the offline database.
+    fn locate_home(&mut self, info: public_ip::PublicIpInfo) -> HomeLocation {
+        if let Some(location) = info.location {
+            return HomeLocation {
+                ip: info.ip,
+                location: Some(location),
+                source: Some(info.source),
+            };
+        }
+        let geoip = self.geoip.as_mut().and_then(|(_, db)| db.as_mut().ok());
+        let location = geoip.and_then(|db| db.lookup(info.ip));
+        HomeLocation {
+            ip: info.ip,
+            location,
+            source: None,
         }
     }
 

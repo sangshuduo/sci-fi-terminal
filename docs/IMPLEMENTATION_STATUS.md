@@ -75,7 +75,8 @@ Status as of 2026-09-22, branch `feat/terminal-foundation`. This records what ex
   - An optional `[style]` table controls corner radius, border width, static glow and UI font. It is validated, rejects unknown keys, and has no code, URL or path surface.
   - Signal and Graphite ship with glow; High contrast uses square 2 px borders.
 - **Home spot** (`monitor/public_ip.rs`, ADR-007)
-  - An opt-in public-IP lookup, off by default. It uses HTTPS only, no redirects, a 5 s timeout and a 64-byte response cap, at most every 30 min.
+  - An opt-in public-IP lookup, off by default. It uses HTTPS only, no redirects, a 5 s timeout and a 4 KiB response cap, at most every 30 min.
+  - The default endpoint, ipinfo.io, returns a location, which is used directly and shown as "via ipinfo.io" (ADR-009). A plain-text endpoint falls back to the offline database, whose Lite data put the owner in Ottawa instead of Toronto.
   - The address is located with the offline database and marked on the globe with a flashing spot (1.2 s expanding ring). The spot is steady under reduced motion, and a still globe turns to face it.
   - Verified live with the DB-IP City Lite database (not bundled), which resolved the city correctly, using an `#[ignore]` test run on demand.
   - The flashing itself has not been seen on screen yet: the display was asleep when this was tested.

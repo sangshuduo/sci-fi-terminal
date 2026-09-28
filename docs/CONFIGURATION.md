@@ -63,7 +63,7 @@ geoip_database = ""    # empty = bundled DB-IP City Lite; "off" = disabled; or a
 globe = true           # wireframe globe with peer markers
 globe_rotate = true    # <= 30 Hz while visible; still when reduced_motion = true
 public_ip_lookup = false  # opt-in: ask the endpoint for your public IP (it sees your IP)
-public_ip_endpoint = "https://api.ipify.org"  # https only; returns the IP as plain text
+public_ip_endpoint = "https://ipinfo.io/json"  # https only; JSON with location (used directly) or plain-text IP (located offline)
 
 [panels.files]
 enabled = true

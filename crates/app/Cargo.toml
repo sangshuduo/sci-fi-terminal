@@ -21,6 +21,7 @@ maxminddb.workspace = true
 rodio.workspace = true
 ureq.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 toml.workspace = true
 thiserror.workspace = true
 

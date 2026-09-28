@@ -33,6 +33,8 @@ pub struct GeoLocation {
     pub country: Option<String>,
     /// English city name.
     pub city: Option<String>,
+    /// English name of the first-level subdivision (state, province).
+    pub region: Option<String>,
     /// Approximate latitude.
     pub latitude: Option<f64>,
     /// Approximate longitude.
@@ -178,6 +180,11 @@ impl GeoIp {
             country_code: city.country.iso_code.map(str::to_owned),
             country: city.country.names.english.map(str::to_owned),
             city: city.city.names.english.map(str::to_owned),
+            region: city
+                .subdivisions
+                .first()
+                .and_then(|region| region.names.english)
+                .map(str::to_owned),
             latitude: city.location.latitude.filter(|v| v.is_finite()),
             longitude: city.location.longitude.filter(|v| v.is_finite()),
         };

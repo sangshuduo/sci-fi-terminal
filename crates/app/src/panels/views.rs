@@ -173,7 +173,10 @@ fn globe_view<'a, M: 'a>(globe: &GlobeView<'a>, sample: &MonitorSample) -> Eleme
 fn home_line<'a, M: 'a>(sample: &MonitorSample) -> Element<'a, M> {
     let line = match (&sample.home, &sample.home_status) {
         (Some(home), status) => match home.place() {
-            Some(place) => format!("◉ You: {place} ({})", home.ip),
+            Some(place) => match &home.source {
+                Some(source) => format!("◉ You: {place} ({}) · via {source}", home.ip),
+                None => format!("◉ You: {place} ({})", home.ip),
+            },
             None => format!(
                 "◉ You: {} — {}",
                 home.ip,
@@ -279,6 +282,7 @@ mod tests {
             country_code: Some("US".into()),
             country: Some("United States".into()),
             city: Some("Norwell".into()),
+            region: Some("Massachusetts".into()),
             latitude: None,
             longitude: None,
         };

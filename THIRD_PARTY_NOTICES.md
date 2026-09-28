@@ -16,6 +16,10 @@ following third-party data. Provenance, versions and hashes are recorded in
 - The application shows this attribution in the Network panel wherever
   GeoIP results are displayed.
 
+## Online service used by an opt-in feature (not bundled)
+
+- **ipinfo.io:** the default endpoint of the *opt-in* public-IP lookup (`panels.network.public_ip_lookup`, off by default). When enabled, the app sends one HTTPS request at most every 30 minutes, and ipinfo.io sees the user's IP address. The location it returns is shown with "via ipinfo.io". Use of the service is subject to ipinfo.io's terms. The endpoint is configurable.
+
 ## Natural Earth 1:110m coastlines
 
 - **File:** `assets/geo/coastline-110m.bin` (compiled into the binary)

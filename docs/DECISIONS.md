@@ -149,6 +149,32 @@ Dynamic native libraries expose unstable Rust ABI and process-wide trust. Subpro
 - Builds and CI fetch from db-ip.com. Old monthly URLs may eventually disappear, so the pin must be bumped.
 - The app itself still makes no request to db-ip.com.
 
+## ADR-009: Take the home location from the public-IP endpoint
+
+**Status:** accepted by the project owner, 2026-09-28. It refines ADR-007.
+
+**Context:** the owner reported that the bundled DB-IP Lite data places their IP (a Toronto customer of a regional ISP) in Hintonburg, Ottawa, about 350 km away. The database was read correctly; the Lite edition is documented as having "reduced coverage and accuracy". For the user's *own* address, the opt-in lookup already sends the IP to a third party, so asking that same request for a location adds no new disclosure.
+
+**Decision:**
+- The default endpoint becomes `https://ipinfo.io/json`, which returns the IP, city, region, country and `loc` in a single JSON reply. Live check: it correctly returned Toronto, Ontario for the owner.
+- Accepted replies are JSON using the common field names (`ip`/`query`, `city`, `region`/`regionName`, `country`/`countryCode`, `loc` or `lat`/`lon`/`latitude`/`longitude`) or plain text containing only an IP.
+- When the reply has a location, it is used directly and the panel shows "via <host>". With a plain-text endpoint such as ipify, the offline database still locates the IP.
+- Limits: the body cap rises to 4 KiB. Strings are stripped of control characters and truncated to 64 characters, coordinates are range-checked, and the IP must still be public.
+- Peers are always located offline. Their addresses are never sent anywhere.
+- The display gains the region (e.g. "Toronto, Ontario, CA").
+
+**Rejected alternatives:**
+
+| Alternative | Why rejected |
+|---|---|
+| Manual home location | Doesn't follow travel or VPN (owner's choice) |
+| Replacing DB-IP for peers | Would send peer IPs to a third party |
+| MaxMind GeoLite2 bundling | Redistribution is not permitted |
+
+**Consequences:**
+- The accuracy of the home spot depends on the chosen service.
+- ipinfo's free, keyless use is rate-limited, and the app's 30-minute cadence is far below any limit.
+
 ## Proposed dependency budget
 
 | Dependency | Purpose | License posture / admission condition |
