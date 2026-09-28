@@ -48,6 +48,7 @@ restore = true
 max_sessions = 8
 
 [window]
+mode = "windowed"    # "windowed" | "maximized" | "fullscreen"; next launch
 width = 1100         # launch size in logical pixels, 640..=7680
 height = 700         # 400..=4320; takes effect at the next launch
 

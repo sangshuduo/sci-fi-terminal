@@ -10,7 +10,7 @@ use iced::widget::{
 use iced::{Element, Length};
 
 use super::actions::{ACTIONS, Action, Chord, Keymap};
-use crate::config::{Config, CursorShape, EffectsPreset, KeyBinding, Theme, validate};
+use crate::config::{Config, CursorShape, EffectsPreset, KeyBinding, Theme, WindowMode, validate};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Category {
@@ -50,6 +50,7 @@ pub enum SettingsMsg {
     FontSize(f32),
     LineHeight(f32),
     ReducedMotion(bool),
+    WindowMode(WindowMode),
     WindowWidth(String),
     WindowHeight(String),
     Effects(EffectsPreset),
@@ -134,6 +135,7 @@ impl Settings {
                 appearance.line_height = (height * 20.0).round() / 20.0
             }
             SettingsMsg::ReducedMotion(on) => appearance.reduced_motion = on,
+            SettingsMsg::WindowMode(mode) => self.draft.window.mode = mode,
             SettingsMsg::WindowWidth(value) => {
                 if let Ok(width) = value.trim().parse() {
                     self.draft.window.width = width;
@@ -292,6 +294,16 @@ impl std::fmt::Display for CursorShape {
             Self::Block => "Block",
             Self::Beam => "Beam",
             Self::Underline => "Underline",
+        })
+    }
+}
+
+impl std::fmt::Display for WindowMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Windowed => "Windowed",
+            Self::Maximized => "Maximized",
+            Self::Fullscreen => "Full screen",
         })
     }
 }
@@ -496,7 +508,25 @@ fn appearance_rows<'a, M: Clone + 'a>(
                 .into(),
         ),
         (
-            "Window size at launch",
+            "Window at launch",
+            row![
+                pick_list(
+                    vec![
+                        WindowMode::Windowed,
+                        WindowMode::Maximized,
+                        WindowMode::Fullscreen
+                    ],
+                    Some(settings.draft.window.mode),
+                    move |m| wrap(SettingsMsg::WindowMode(m)),
+                ),
+                text("next launch").size(12),
+            ]
+            .spacing(6)
+            .align_y(iced::Alignment::Center)
+            .into(),
+        ),
+        (
+            "Window size",
             row![
                 text_input("1100", &settings.window_text.0)
                     .on_input(move |v| wrap(SettingsMsg::WindowWidth(v)))
@@ -505,7 +535,7 @@ fn appearance_rows<'a, M: Clone + 'a>(
                 text_input("700", &settings.window_text.1)
                     .on_input(move |v| wrap(SettingsMsg::WindowHeight(v)))
                     .width(72),
-                text("px, next launch").size(12),
+                text("px (windowed, and when restored)").size(12),
             ]
             .spacing(6)
             .align_y(iced::Alignment::Center)
@@ -777,6 +807,8 @@ mod tests {
         let mut settings = Settings::open(&config, &Keymap::build(&[], false));
         settings.update(SettingsMsg::FontSize(20.0));
         settings.update(SettingsMsg::WindowWidth("1600".into()));
+        settings.update(SettingsMsg::WindowMode(WindowMode::Fullscreen));
+        assert_eq!(settings.draft.window.mode, WindowMode::Fullscreen);
         assert_eq!(settings.draft.window.width, 1600);
         settings.update(SettingsMsg::ResetSection);
         assert_eq!(settings.draft.appearance, Config::default().appearance);

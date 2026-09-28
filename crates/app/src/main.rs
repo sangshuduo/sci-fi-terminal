@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use sci_fi_terminal::config::{ConfigPaths, WindowSettings, load_effective};
+use sci_fi_terminal::config::{ConfigPaths, WindowMode, WindowSettings, load_effective};
 use sci_fi_terminal::ui::{App, Options};
 
 const USAGE: &str = "\
@@ -89,11 +89,20 @@ fn config_paths(options: &Options) -> Option<ConfigPaths> {
 
 /// `[window]` from the effective configuration; invalid files fall back to
 /// defaults (the app reports their diagnostics once it is running).
-fn launch_size(options: &Options) -> iced::Size {
-    let window = config_paths(options).map_or_else(WindowSettings::default, |paths| {
+fn launch_window(options: &Options) -> WindowSettings {
+    config_paths(options).map_or_else(WindowSettings::default, |paths| {
         load_effective(&paths, options.safe_mode).config.window
-    });
-    iced::Size::new(window.width as f32, window.height as f32)
+    })
+}
+
+fn window_settings(window: WindowSettings) -> iced::window::Settings {
+    iced::window::Settings {
+        size: iced::Size::new(window.width as f32, window.height as f32),
+        maximized: window.mode == WindowMode::Maximized,
+        fullscreen: window.mode == WindowMode::Fullscreen,
+        icon: window_icon(),
+        ..iced::window::Settings::default()
+    }
 }
 
 fn check_config(options: &Options) -> ExitCode {
@@ -137,18 +146,14 @@ fn main() -> ExitCode {
         Command::CheckConfig(options) => return check_config(&options),
         Command::Run(options) => options,
     };
-    let size = launch_size(&options);
+    let window = window_settings(launch_window(&options));
     let result = iced::application(move || App::boot(options.clone()), App::update, App::view)
         .title(App::title)
         .theme(App::theme)
         .subscription(App::subscription)
         .exit_on_close_request(false)
         .antialiasing(true)
-        .window(iced::window::Settings {
-            size,
-            icon: window_icon(),
-            ..iced::window::Settings::default()
-        })
+        .window(window)
         .run();
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -183,6 +188,24 @@ mod tests {
         assert!(parse(&["--config"]).is_err());
         assert!(parse(&["--bogus"]).is_err());
         assert!(matches!(parse(&["-V"]), Ok(Command::Version)));
+    }
+
+    #[test]
+    fn window_mode_maps_to_iced_settings() {
+        let base = WindowSettings::default();
+        let windowed = window_settings(base);
+        assert!(!windowed.maximized && !windowed.fullscreen);
+        assert_eq!(windowed.size, iced::Size::new(1100.0, 700.0));
+        let maximized = window_settings(WindowSettings {
+            mode: WindowMode::Maximized,
+            ..base
+        });
+        assert!(maximized.maximized && !maximized.fullscreen);
+        let fullscreen = window_settings(WindowSettings {
+            mode: WindowMode::Fullscreen,
+            ..base
+        });
+        assert!(fullscreen.fullscreen && !fullscreen.maximized);
     }
 
     #[test]

@@ -156,10 +156,26 @@ impl Default for LayoutSettings {
     }
 }
 
-/// Window size at launch, in logical pixels. Read once, before the window opens.
+/// How the window opens at launch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WindowMode {
+    /// A window of `width` x `height`.
+    #[default]
+    Windowed,
+    /// Fills the screen's work area, keeping the title bar and Dock/taskbar.
+    Maximized,
+    /// Covers the whole screen.
+    Fullscreen,
+}
+
+/// Window at launch, in logical pixels. Read once, before the window opens.
+/// `width`/`height` are also the size a maximized or full-screen window
+/// returns to when restored.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct WindowSettings {
+    pub mode: WindowMode,
     pub width: u32,
     pub height: u32,
 }
@@ -174,6 +190,7 @@ impl WindowSettings {
 impl Default for WindowSettings {
     fn default() -> Self {
         Self {
+            mode: WindowMode::Windowed,
             width: 1100,
             height: 700,
         }

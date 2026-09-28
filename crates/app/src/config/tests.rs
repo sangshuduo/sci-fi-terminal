@@ -155,6 +155,23 @@ fn unsupported_effect_preset_rejected() {
 }
 
 #[test]
+fn window_modes_parse_and_unknown_mode_is_rejected() {
+    for (name, mode) in [
+        ("windowed", WindowMode::Windowed),
+        ("maximized", WindowMode::Maximized),
+        ("fullscreen", WindowMode::Fullscreen),
+    ] {
+        let text = with_edit(&format!("[window]\nmode = \"{name}\""));
+        assert_eq!(parse_config(&text, p()).expect("valid").window.mode, mode);
+    }
+    let text = with_edit("[window]\nmode = \"kiosk\"");
+    assert!(matches!(
+        parse_config(&text, p()),
+        Err(ConfigError::Parse { .. })
+    ));
+}
+
+#[test]
 fn newer_schema_rejected_read_only() {
     let err = parse_config("schema_version = 2\nfuture_thing = true\n", p()).unwrap_err();
     let ConfigError::Invalid(diags) = err else {
