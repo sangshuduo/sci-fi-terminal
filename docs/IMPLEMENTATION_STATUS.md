@@ -85,6 +85,11 @@ Status as of 2026-09-22, branch `feat/terminal-foundation`. This records what ex
   - `.github/workflows/release.yml` packages it next to the binary for Linux, macOS and Windows, in unsigned developer-preview archives with checksums, and publishes on `v*` tags.
   - With the setting left empty, the app finds the bundled file automatically. The Network panel shows "IP Geolocation by DB-IP", and the credit is also in `THIRD_PARTY_NOTICES.md`.
   - The release workflow has not run yet, because no tag has been pushed.
+- **Application icon** (`assets/icons/`)
+  - Original MIT artwork: an amber wireframe globe behind a `›_` prompt, with a teal "you are here" dot. A simplified SVG is used for 16–48 px.
+  - `scripts/build-icons.sh` renders the PNG sizes, `.ico`, `.icns` and a raw 64 px RGBA window icon; the outputs are committed.
+  - Window and taskbar icon on Linux and Windows comes from the embedded RGBA. On Windows, `crates/app/build.rs` also embeds the `.ico` in the `.exe` (not yet verified on Windows; CI builds it).
+  - macOS: `scripts/bundle-macos.sh` builds an unsigned `sci-fi-terminal.app` with the `.icns` and the GeoIP database. The release workflow ships it; Linux archives carry a `.desktop` file and a 256 px PNG.
 - **Peer globe** (`render/globe.rs`, ADR-006)
   - Orthographic wireframe globe built from the bundled public-domain Natural Earth coastlines (provenance recorded in `docs/provenance.csv`), with markers for GeoIP-located peers.
   - Measured on an Apple Silicon Mac, release build, all monitoring panels visible (one-off readings, not a benchmark): about 3–4% CPU with the globe still, about 7% while it rotates. The first version cost about 11%. That dropped after coastline points were precomputed as unit vectors, each layer was drawn as a single path, and the tick was lowered to 20 Hz.
@@ -108,7 +113,7 @@ Status as of 2026-09-22, branch `feat/terminal-foundation`. This records what ex
 | Extensions verification | Several paths have no test that exercises them for real. **GeoIP**: lookups against a real `.mmdb` are not unit-tested because no database fixture is bundled. **Sound**: playback was not checked by ear. **Touch**: gestures were not tried on touch hardware. **On-screen keyboard**: clicks were only exercised through unit tests (key → bytes). | ADR-005 |
 | Directory viewer source | Reads the working directory of the shell process itself, not of its foreground child, and has no OSC 7 support yet. Windows may not expose it (the panel then shows "unavailable"). | ADR-005 follow-up |
 | Connections | Sockets owned by other users may be hidden without elevated rights. PIDs are captured but not shown. | ADR-005 |
-| Packaging | Release archives exist (tar.gz/zip with the binary, the GeoIP data and notices), but there are no installers, `.app` bundle, SBOM, generated per-crate licence bundle or signing. | DEVELOPMENT §Packaging |
+| Packaging | Release archives exist (tar.gz/zip with the binary or an unsigned `.app`, the GeoIP data, icon and notices), but there are no installers, SBOM, generated per-crate licence bundle or signing. | DEVELOPMENT §Packaging |
 | Evidence | No benchmark baseline, fuzzing, vttest subset or Linux/Windows desktop smoke tests. | TESTING |
 
 ## How to run

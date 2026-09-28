@@ -27,3 +27,7 @@ thiserror.workspace = true
 
 [lints]
 workspace = true
+
+# Embed the application icon into the Windows executable (build.rs).
+[target.'cfg(windows)'.build-dependencies]
+embed-resource = "3.0.11"

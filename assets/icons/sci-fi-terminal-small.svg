@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- sci-fi-terminal icon, simplified for 16–48 px: same tile and colours,
+     larger prompt, globe reduced to its outline. Original artwork (MIT). -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2A2219"/>
+      <stop offset="1" stop-color="#110E0A"/>
+    </linearGradient>
+  </defs>
+  <rect x="48" y="48" width="928" height="928" rx="200" fill="url(#tile)"/>
+  <circle cx="512" cy="512" r="330" fill="none" stroke="#F2A93B" stroke-opacity="0.45" stroke-width="40"/>
+  <rect x="48" y="48" width="928" height="928" rx="200" fill="none" stroke="#F2A93B" stroke-opacity="0.7" stroke-width="36"/>
+  <polyline points="270,330 440,512 270,694" fill="none" stroke="#FFC766"
+            stroke-width="110" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="500" y="620" width="270" height="100" rx="30" fill="#FFC766"/>
+  <circle cx="742" cy="316" r="64" fill="#7DBFAF"/>
+</svg>

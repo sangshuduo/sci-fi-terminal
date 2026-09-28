@@ -52,8 +52,22 @@ jobs:
           set -euo pipefail
           dir="sci-fi-terminal-${GITHUB_REF_NAME//\//-}-${TARGET}"
           mkdir -p "dist/$dir"
-          cp "target/release/$EXE" "dist/$dir/"
-          cp assets/geo/dbip-city-lite.mmdb LICENSE THIRD_PARTY_NOTICES.md README.md "dist/$dir/"
+          cp LICENSE THIRD_PARTY_NOTICES.md README.md "dist/$dir/"
+          case "$RUNNER_OS" in
+            macOS)
+              # The .app carries the icon and the database in Contents/Resources.
+              scripts/bundle-macos.sh "dist/$dir"
+              ;;
+            Linux)
+              cp "target/release/$EXE" assets/geo/dbip-city-lite.mmdb "dist/$dir/"
+              cp packaging/linux/sci-fi-terminal.desktop "dist/$dir/"
+              cp assets/icons/png/icon-256.png "dist/$dir/sci-fi-terminal.png"
+              ;;
+            *)
+              # The Windows icon is embedded in the .exe by crates/app/build.rs.
+              cp "target/release/$EXE" assets/geo/dbip-city-lite.mmdb "dist/$dir/"
+              ;;
+          esac
           echo "ARCHIVE_DIR=$dir" >> "$GITHUB_ENV"
       - name: Archive (Unix)
         if: runner.os != 'Windows'

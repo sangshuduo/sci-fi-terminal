@@ -27,4 +27,4 @@ The recommended starting architecture is Iced with its wgpu renderer, a custom t
 
 9. [Implementation status](docs/IMPLEMENTATION_STATUS.md): what the code delivers today and the known gaps against the spec.
 
-`crates/` and `.github/workflows/ci.yml` now exist; proposed paths under `tests/`, `assets/`, `packaging/`, `benches/` and `fuzz/` are still future work. No third-party source has been vendored.
+`crates/`, `assets/`, `packaging/` and the CI/release workflows now exist; proposed paths under `tests/`, `benches/` and `fuzz/` are still future work. The only vendored third-party source is a patched `block` crate in `third_party/block` (see its `PATCHED.md`).

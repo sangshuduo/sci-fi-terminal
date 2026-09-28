@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=sci-fi-terminal
+GenericName=Terminal
+Comment=Rust-native terminal with optional system and network panels
+Exec=sci-fi-terminal
+Icon=sci-fi-terminal
+Terminal=false
+Categories=System;TerminalEmulator;
+Keywords=shell;prompt;command;terminal;
