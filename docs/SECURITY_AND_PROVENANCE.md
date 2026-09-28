@@ -23,7 +23,7 @@ Propose MIT OR Apache-2.0 for original application code, subject to the owner's 
 | Future extensions | Terminal spying/input injection | Explicit capabilities, isolation/quotas, versioned protocol before deployment |
 | Process/network monitor | Leaking other processes' arguments or secrets; surveillance of connections | Collect name/PID/CPU/memory only (never command lines or environment); sockets read locally, capped at 200; nothing persisted or sent |
 | Public-IP lookup (opt-in) | Disclosure of the user's IP to a third party; hostile or spoofed response | Off by default; https-only endpoint, no redirects, 5 s timeout, 64-byte body cap; response must parse as a single public IP; never rendered as markup or executed |
-| GeoIP database | Network exfiltration of peer addresses; malformed database | Offline `.mmdb` only, opt-in path, ≤ 512 MiB, public addresses only, bounded lookup cache; no downloads or online lookups |
+| GeoIP database | Network exfiltration of peer addresses; malformed or substituted database | Offline `.mmdb` only: bundled DB-IP file pinned by SHA-256 at build time (ADR-008) or a user path; ≤ 512 MiB, public addresses only, bounded lookup cache; no downloads or online lookups |
 | Directory viewer | Accidental execution, path confusion | Read-only listing (≤ 500 entries), symlinks shown not followed for listing metadata; "Insert `cd`" types a quoted command without Enter |
 | On-screen keyboard layouts | Hidden command strings | Data-only TOML; keys map to single characters, named keys or modifiers only |
 | Sound | Distraction, device hangs | Off by default, synthesised in code, rate-limited, non-blocking; failure to open a device is silent |

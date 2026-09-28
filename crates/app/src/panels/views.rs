@@ -120,8 +120,13 @@ fn short_name(name: &str) -> String {
 pub(super) fn network<'a, M: 'a>(
     sample: &MonitorSample,
     globe: Option<&GlobeView<'a>>,
+    geoip_credit: Option<&'static str>,
 ) -> Element<'a, M> {
     let mut col = column![].spacing(6);
+    // Licence-required attribution wherever GeoIP results are displayed.
+    if let Some(credit) = geoip_credit {
+        col = col.push(text(credit).size(10));
+    }
     if let Some(globe) = globe {
         col = col.push(globe_view(globe, sample));
     }
@@ -145,7 +150,7 @@ pub(super) fn network<'a, M: 'a>(
 /// Square globe canvas plus a caption explaining what the markers are.
 fn globe_view<'a, M: 'a>(globe: &GlobeView<'a>, sample: &MonitorSample) -> Element<'a, M> {
     let caption = match (&sample.geoip_status, globe.markers.len()) {
-        (None, _) => "Set a GeoIP database in Settings to plot peers".to_owned(),
+        (None, _) => "No GeoIP data: run scripts/fetch-geoip.sh or set a database".to_owned(),
         (Some(_), 0) => "No located public peers".to_owned(),
         (Some(_), n) => format!("{n} peer location(s)"),
     };

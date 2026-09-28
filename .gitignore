@@ -25,3 +25,8 @@ target
 .claude-flow/
 .omc/
 .claude/
+
+# Fetched GeoIP data (see assets/geo/dbip-city-lite.toml)
+assets/geo/*.mmdb
+.swarm/
+ruvector.db

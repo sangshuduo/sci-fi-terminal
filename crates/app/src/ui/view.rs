@@ -182,6 +182,7 @@ impl App {
         PanelContext {
             sample: &self.monitor,
             show_processes: self.config.panels.processes.enabled,
+            geoip_credit: self.geoip_credit,
             globe: self.config.panels.network.globe.then(|| GlobeView {
                 state: &self.globe,
                 markers: &self.globe_markers,

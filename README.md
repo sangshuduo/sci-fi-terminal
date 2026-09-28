@@ -4,6 +4,7 @@
 The project and directory name is `sci-fi-terminal`.
 
 ```sh
+scripts/fetch-geoip.sh                      # once: fetch + verify the bundled DB-IP GeoIP data
 cargo run -p sci-fi-terminal --release      # launch
 cargo run -p sci-fi-terminal -- --help       # --config, --check-config, --safe-mode
 cargo test --workspace

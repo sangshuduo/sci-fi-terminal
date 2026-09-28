@@ -191,7 +191,7 @@ fn validate_extensions(config: &Config, out: &mut Vec<Diagnostic>) {
     if geoip.contains('\0') || geoip.contains("://") {
         out.push(Diagnostic::new(
             "panels.network.geoip_database",
-            "must be a local file path (URLs are not supported; nothing is downloaded)",
+            "must be empty (bundled), \"off\", or a local file path; URLs are not supported",
         ));
     }
     if let Err(message) =

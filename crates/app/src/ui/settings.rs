@@ -561,7 +561,7 @@ fn panel_rows<'a, M: Clone + 'a>(
         (
             "GeoIP database (.mmdb)",
             text_input(
-                "Local file path; empty = off",
+                "empty = bundled DB-IP; \"off\" = disabled; or a path",
                 &settings.draft.panels.network.geoip_database,
             )
             .on_input(move |p| wrap(SettingsMsg::GeoIpPath(p)))

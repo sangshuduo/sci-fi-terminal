@@ -14,6 +14,7 @@ use super::palette::Palette;
 use super::settings::{Settings, overrides_toml};
 use super::state::{PaneState, Tab, splits};
 use crate::config::{Config, DEFAULT_PROFILE_ID, LayoutPreset, write_atomic};
+use crate::monitor::GeoIpSource;
 use crate::panels::metrics::BACKGROUND_INTERVAL;
 use crate::panels::{BuiltinPanel, MonitorPlan, MonitorSample, MonitorWorker};
 use crate::render::CellMetrics;
@@ -436,7 +437,9 @@ impl App {
                 .then_some(usize::from(panels.processes.count)),
             network: network.then_some(network_every),
             connections: panels.network.connections,
-            geoip_database: (!geoip.is_empty()).then(|| std::path::PathBuf::from(geoip)),
+            geoip_database: GeoIpSource::resolve(geoip)
+                .path()
+                .map(std::path::Path::to_path_buf),
             public_ip_endpoint: (network && panels.network.public_ip_lookup)
                 .then(|| panels.network.public_ip_endpoint.trim().to_owned()),
             files_pid: if directory { files_pid } else { None },
@@ -446,6 +449,8 @@ impl App {
 
     /// Start, retarget or stop the monitor worker to match what is visible.
     pub(super) fn sync_metrics_worker(&mut self) {
+        self.geoip_credit =
+            GeoIpSource::resolve(&self.config.panels.network.geoip_database).credit();
         let plan = self.monitor_plan();
         if plan.is_idle() {
             self.monitor_worker = None;

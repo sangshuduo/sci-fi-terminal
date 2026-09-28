@@ -55,7 +55,7 @@ Dynamic native libraries expose unstable Rust ABI and process-wide trust. Subpro
 | Processes | `sysinfo` process table, top N by CPU, name/PID/CPU/memory only | Shelling out to `ps`/`top` (spec forbids); collecting command lines (privacy) |
 | Interfaces | `sysinfo` network counters, rate = delta ÷ elapsed | Packet capture (privileges, scope) |
 | Connections | `netstat2` local socket tables (TCP/UDP, v4/v6), capped at 200 | `lsof`/`netstat` subprocesses; raw sockets |
-| GeoIP | `maxminddb` reading a **user-supplied offline** database, opt-in | Online lookup services (sends peer IPs to a third party); bundling a database (licence and update burden) |
+| GeoIP | `maxminddb` reading an **offline** database: bundled DB-IP City Lite (ADR-008) or a user-supplied file | Online lookup services (sends peer IPs to a third party) |
 | Directory viewer | Process table cwd of the shell PID, polled only while visible; OSC 7 support deferred | Injecting shell hooks into user profiles |
 | Touch | Iced touch events: drag-to-scroll, tap-to-focus | Custom gesture engine |
 | On-screen keyboard | Built-in Iced widgets. TOML layouts emit ordinary key events | Arbitrary macro strings on keys (hidden command injection) |
@@ -121,6 +121,33 @@ Dynamic native libraries expose unstable Rust ABI and process-wide trust. Subpro
 **Consequences:**
 - The first network request made by the app itself, not by a child process.
 - New dependency: `ureq` with rustls.
+
+## ADR-008: Bundle the DB-IP City Lite database
+
+**Status:** accepted by the project owner, 2026-09-28. This supersedes ADR-005's choice not to bundle a GeoIP database.
+
+**Context:** the owner wants GeoIP to work without extra setup, in both the repository and release packages. DB-IP's *IP to City Lite* database is licensed CC BY 4.0: "free to use … in your application, provided you give attribution to DB-IP.com". The monthly `.mmdb` is 121 MB, above GitHub's 100 MB per-file limit.
+
+**Decision:**
+- **Pinning.** Pin one monthly release in `assets/geo/dbip-city-lite.toml`: month, URL, and SHA-256 of both the compressed and the extracted file.
+- **Fetching.** `scripts/fetch-geoip.sh` downloads over HTTPS, verifies both hashes, and installs the file atomically to `assets/geo/dbip-city-lite.mmdb`, which is gitignored.
+- **Releases.** `.github/workflows/release.yml` runs the same script and packages the verified file next to the binary.
+- **Lookup order.** At runtime an empty `panels.network.geoip_database` means the bundled file. The app looks next to the executable, in `../Resources` (macOS), in `../share/sci-fi-terminal` (Linux), and in `assets/geo` for debug builds. `"off"` disables GeoIP; any other value is a user path.
+- **Attribution.** "IP Geolocation by DB-IP (db-ip.com), CC BY 4.0" appears in the Network panel whenever DB-IP data is in use, in `THIRD_PARTY_NOTICES.md`, in the release notes and in `docs/provenance.csv`.
+- **Updates.** Change `month` and run `scripts/fetch-geoip.sh --update` to get the new hashes. Review and commit the change like any other.
+
+**Rejected alternatives:**
+
+| Alternative | Why rejected |
+|---|---|
+| Git LFS | Storage and bandwidth quotas; 121 MB added per update |
+| Committing the 60 MB `.gz` | Permanent history bloat with every monthly update |
+| MaxMind GeoLite2 | Its licence requires an account and forbids redistribution without agreement |
+
+**Consequences:**
+- Release archives grow by about 121 MB.
+- Builds and CI fetch from db-ip.com. Old monthly URLs may eventually disappear, so the pin must be bumped.
+- The app itself still makes no request to db-ip.com.
 
 ## Proposed dependency budget
 

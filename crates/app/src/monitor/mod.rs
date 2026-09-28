@@ -16,7 +16,7 @@ pub mod processes;
 pub mod public_ip;
 
 pub use connections::{Connection, ConnectionState, MAX_CONNECTIONS, Protocol, list_connections};
-pub use geoip::{GeoIp, GeoIpError, GeoLocation};
+pub use geoip::{BUNDLED_DATABASE, DBIP_CREDIT, GeoIp, GeoIpError, GeoIpSource, GeoLocation};
 pub use network::{InterfaceRate, NetworkSampler};
 pub use processes::{MAX_PROCESSES, ProcessInfo, ProcessSampler};
 

@@ -21,6 +21,8 @@ pub struct PanelContext<'a> {
     pub sample: &'a MonitorSample,
     /// Show the top-process table inside the System panel.
     pub show_processes: bool,
+    /// Attribution for the GeoIP data in use, shown wherever results appear.
+    pub geoip_credit: Option<&'static str>,
     /// Globe drawing inputs for the network panel; `None` hides the globe.
     pub globe: Option<crate::render::globe::GlobeView<'a>>,
 }
@@ -83,7 +85,7 @@ impl BuiltinPanel {
         let sample = context.sample;
         match self {
             Self::System => views::system(sample, context.show_processes),
-            Self::Network => views::network(sample, context.globe.as_ref()),
+            Self::Network => views::network(sample, context.globe.as_ref(), context.geoip_credit),
             Self::Directory => match &sample.files {
                 Some(state) => files::view(state, move |m| wrap(PanelMsg::Files(m))),
                 None => views::placeholder("No focused shell"),
@@ -157,6 +159,7 @@ mod tests {
         let context = PanelContext {
             sample: &sample,
             show_processes: true,
+            geoip_credit: Some("credit"),
             globe: None,
         };
         for panel in PanelRegistry::builtin().iter() {

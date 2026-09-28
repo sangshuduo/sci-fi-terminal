@@ -78,6 +78,11 @@ Status as of 2026-09-22, branch `feat/terminal-foundation`. This records what ex
   - The address is located with the offline database and marked on the globe with a flashing spot (1.2 s expanding ring). The spot is steady under reduced motion, and a still globe turns to face it.
   - Verified live with the DB-IP City Lite database (not bundled), which resolved the city correctly, using an `#[ignore]` test run on demand.
   - The flashing itself has not been seen on screen yet: the display was asleep when this was tested.
+- **Bundled GeoIP** (ADR-008)
+  - The DB-IP City Lite database (CC BY 4.0) is pinned by month and SHA-256 in `assets/geo/dbip-city-lite.toml`. `scripts/fetch-geoip.sh` fetches and verifies it; the 121 MB file itself is not committed.
+  - `.github/workflows/release.yml` packages it next to the binary for Linux, macOS and Windows, in unsigned developer-preview archives with checksums, and publishes on `v*` tags.
+  - With the setting left empty, the app finds the bundled file automatically. The Network panel shows "IP Geolocation by DB-IP", and the credit is also in `THIRD_PARTY_NOTICES.md`.
+  - The release workflow has not run yet, because no tag has been pushed.
 - **Peer globe** (`render/globe.rs`, ADR-006)
   - Orthographic wireframe globe built from the bundled public-domain Natural Earth coastlines (provenance recorded in `docs/provenance.csv`), with markers for GeoIP-located peers.
   - Measured on an Apple Silicon Mac, release build, all monitoring panels visible (one-off readings, not a benchmark): about 3–4% CPU with the globe still, about 7% while it rotates. The first version cost about 11%. That dropped after coastline points were precomputed as unit vectors, each layer was drawn as a single path, and the tick was lowered to 20 Hz.
@@ -101,12 +106,13 @@ Status as of 2026-09-22, branch `feat/terminal-foundation`. This records what ex
 | Extensions verification | Several paths have no test that exercises them for real. **GeoIP**: lookups against a real `.mmdb` are not unit-tested because no database fixture is bundled. **Sound**: playback was not checked by ear. **Touch**: gestures were not tried on touch hardware. **On-screen keyboard**: clicks were only exercised through unit tests (key → bytes). | ADR-005 |
 | Directory viewer source | Reads the working directory of the shell process itself, not of its foreground child, and has no OSC 7 support yet. Windows may not expose it (the panel then shows "unavailable"). | ADR-005 follow-up |
 | Connections | Sockets owned by other users may be hidden without elevated rights. PIDs are captured but not shown. | ADR-005 |
-| Packaging | No installers, notices bundle, SBOM or signing. | DEVELOPMENT §Packaging |
+| Packaging | Release archives exist (tar.gz/zip with the binary, the GeoIP data and notices), but there are no installers, `.app` bundle, SBOM, generated per-crate licence bundle or signing. | DEVELOPMENT §Packaging |
 | Evidence | No benchmark baseline, fuzzing, vttest subset or Linux/Windows desktop smoke tests. | TESTING |
 
 ## How to run
 
 ```sh
+scripts/fetch-geoip.sh   # fetch + verify the bundled DB-IP database (once)
 cargo run -p sci-fi-terminal --release
 cargo run -p sci-fi-terminal -- --check-config
 cargo test --workspace

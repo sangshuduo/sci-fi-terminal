@@ -1,11 +1,11 @@
-//! Offline GeoIP lookups against a user-supplied MaxMind-format `.mmdb` file.
+//! Offline GeoIP lookups against a MaxMind-format `.mmdb` file: the bundled
+//! DB-IP City Lite database (ADR-008) or one the user supplies.
 //!
 //! This module never downloads anything and performs no network I/O. The
 //! database is read fully into memory (bounded to 512 MiB) when opened.
 //!
-//! Testing note: no `.mmdb` fixture ships with the repository, so
-//! database-backed lookups are not unit-tested. The open error paths and the
-//! public/private gate ([`should_lookup`]) are.
+//! Testing note: the bundled database is fetched (not committed) by
+//! `scripts/fetch-geoip.sh`; database-backed tests run when it is present.
 
 use std::collections::HashMap;
 use std::fs::File;
@@ -48,6 +48,68 @@ pub enum GeoIpError {
     /// The file exceeds the size limit.
     #[error("GeoIP database {0} is larger than 512 MiB")]
     TooLarge(PathBuf),
+}
+
+/// File name of the database bundled with releases (ADR-008).
+pub const BUNDLED_DATABASE: &str = "dbip-city-lite.mmdb";
+/// Attribution required by the DB-IP Lite licence (CC BY 4.0).
+pub const DBIP_CREDIT: &str = "IP Geolocation by DB-IP (db-ip.com), CC BY 4.0";
+
+/// Where GeoIP data comes from, per `panels.network.geoip_database`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GeoIpSource {
+    /// `"off"`: no lookups at all.
+    Off,
+    /// Empty setting and no bundled file found.
+    Unavailable,
+    /// A database file, with the attribution its licence requires (if known).
+    File {
+        path: PathBuf,
+        credit: Option<&'static str>,
+    },
+}
+
+impl GeoIpSource {
+    /// `""` → bundled DB-IP database; `"off"` → disabled; otherwise a user path.
+    pub fn resolve(setting: &str) -> Self {
+        let setting = setting.trim();
+        if setting.eq_ignore_ascii_case("off") {
+            return Self::Off;
+        }
+        if setting.is_empty() {
+            return platform::paths::bundled_resource(BUNDLED_DATABASE).map_or(
+                Self::Unavailable,
+                |path| Self::File {
+                    path,
+                    credit: Some(DBIP_CREDIT),
+                },
+            );
+        }
+        let path = PathBuf::from(setting);
+        let is_dbip = path.file_name().is_some_and(|name| {
+            name.to_string_lossy()
+                .to_ascii_lowercase()
+                .starts_with("dbip")
+        });
+        Self::File {
+            path,
+            credit: is_dbip.then_some(DBIP_CREDIT),
+        }
+    }
+
+    pub fn path(&self) -> Option<&Path> {
+        match self {
+            Self::File { path, .. } => Some(path),
+            Self::Off | Self::Unavailable => None,
+        }
+    }
+
+    pub fn credit(&self) -> Option<&'static str> {
+        match self {
+            Self::File { credit, .. } => *credit,
+            Self::Off | Self::Unavailable => None,
+        }
+    }
 }
 
 /// An in-memory offline GeoIP database with a small bounded lookup cache.
@@ -137,6 +199,37 @@ pub(crate) fn should_lookup(ip: IpAddr) -> bool {
 mod tests {
     use super::*;
     use std::io::Write;
+
+    #[test]
+    fn source_resolution_rules() {
+        assert_eq!(GeoIpSource::resolve("off"), GeoIpSource::Off);
+        assert_eq!(GeoIpSource::resolve(" OFF "), GeoIpSource::Off);
+        let custom = GeoIpSource::resolve("/data/GeoLite2-City.mmdb");
+        assert_eq!(custom.path(), Some(Path::new("/data/GeoLite2-City.mmdb")));
+        assert_eq!(custom.credit(), None);
+        assert_eq!(
+            GeoIpSource::resolve("/x/dbip-city.mmdb").credit(),
+            Some(DBIP_CREDIT)
+        );
+        // Empty means "bundled": either found (with credit) or unavailable.
+        match GeoIpSource::resolve("") {
+            GeoIpSource::File { credit, .. } => assert_eq!(credit, Some(DBIP_CREDIT)),
+            other => assert_eq!(other, GeoIpSource::Unavailable),
+        }
+    }
+
+    /// Runs when `scripts/fetch-geoip.sh` has placed the bundled database.
+    #[test]
+    fn bundled_database_locates_a_public_address_when_present() {
+        let GeoIpSource::File { path, .. } = GeoIpSource::resolve("") else {
+            eprintln!("bundled database not fetched; skipping");
+            return;
+        };
+        let mut db = GeoIp::open(&path).expect("bundled database opens");
+        let location = db.lookup("8.8.8.8".parse().expect("ip")).expect("located");
+        assert!(location.country_code.is_some());
+        assert!(db.lookup("192.168.1.1".parse().expect("ip")).is_none());
+    }
 
     fn scratch_file(name: &str, contents: &[u8]) -> PathBuf {
         let path = std::env::temp_dir().join(format!("sft-geoip-{}-{name}", std::process::id()));

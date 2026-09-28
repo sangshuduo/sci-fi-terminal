@@ -116,6 +116,8 @@ pub struct App {
     pub(super) globe: GlobeState,
     pub(super) globe_markers: Vec<Marker>,
     pub(super) last_globe_tick: Option<std::time::Instant>,
+    /// Licence attribution for the GeoIP data in use (DB-IP requires one).
+    pub(super) geoip_credit: Option<&'static str>,
     pub(super) palette: Option<Palette>,
     pub(super) settings: Option<Settings>,
     pub(super) search: Option<SearchBar>,
@@ -187,6 +189,7 @@ impl App {
             globe: GlobeState::default(),
             globe_markers: Vec::new(),
             last_globe_tick: None,
+            geoip_credit: None,
             palette: None,
             settings: None,
             search: None,
