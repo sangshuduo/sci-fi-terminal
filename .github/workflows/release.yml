@@ -1,0 +1,163 @@
+name: Release
+
+# Releases are driven by the VERSION file. When a push to main changes it,
+# this workflow checks it (scripts/check-version.sh: semver, equal to the
+# Cargo workspace version) and, if tag v<VERSION> does not exist yet, builds
+# unsigned developer-preview archives (see docs/DEVELOPMENT.md) bundling the
+# pinned DB-IP City Lite database (SHA-256 from assets/geo/dbip-city-lite.toml)
+# and publishes a GitHub pre-release, creating the tag on the released commit.
+# Pull requests touching the release inputs run the same build as a dry run.
+# workflow_dispatch builds the current VERSION. Only main ever publishes.
+
+on:
+  push:
+    branches: [main]
+    paths: [VERSION]
+  pull_request:
+    paths:
+      - VERSION
+      - .github/workflows/release.yml
+      - packaging/**
+      - scripts/bundle-macos.sh
+      - scripts/check-version.sh
+      - scripts/fetch-geoip.sh
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One release at a time on main; a newer VERSION bump waits instead of racing.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  version:
+    name: read VERSION
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+      exists: ${{ steps.read.outputs.exists }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - id: read
+        name: Check VERSION and look for an existing release tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="$(scripts/check-version.sh)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v$version" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::v$version is already tagged; nothing to release. Bump VERSION to release."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  package:
+    name: package (${{ matrix.os }})
+    needs: version
+    if: needs.version.outputs.exists == 'false'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: linux-x86_64
+            exe: sci-fi-terminal
+          - os: macos-14
+            target: macos-arm64
+            exe: sci-fi-terminal
+          - os: windows-2022
+            target: windows-x86_64
+            exe: sci-fi-terminal.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      # actions/checkout v4.2.2, pinned to a reviewed commit.
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Install native libraries
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libxkbcommon-dev libwayland-dev libasound2-dev
+      - name: Fetch and verify GeoIP database
+        shell: bash
+        run: scripts/fetch-geoip.sh
+      - name: Build
+        run: cargo build -p sci-fi-terminal --release --locked
+      - name: Assemble archive directory
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          EXE: ${{ matrix.exe }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          dir="sci-fi-terminal-v${VERSION}-${TARGET}"
+          mkdir -p "dist/$dir"
+          cp LICENSE THIRD_PARTY_NOTICES.md README.md "dist/$dir/"
+          case "$RUNNER_OS" in
+            macOS)
+              # The .app carries the icon and the database in Contents/Resources.
+              scripts/bundle-macos.sh "dist/$dir"
+              ;;
+            Linux)
+              cp "target/release/$EXE" assets/geo/dbip-city-lite.mmdb "dist/$dir/"
+              cp packaging/linux/sci-fi-terminal.desktop "dist/$dir/"
+              cp assets/icons/png/icon-256.png "dist/$dir/sci-fi-terminal.png"
+              ;;
+            *)
+              # The Windows icon is embedded in the .exe by crates/app/build.rs.
+              cp "target/release/$EXE" assets/geo/dbip-city-lite.mmdb "dist/$dir/"
+              ;;
+          esac
+          echo "ARCHIVE_DIR=$dir" >> "$GITHUB_ENV"
+      - name: Archive (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          cd dist
+          tar -czf "$ARCHIVE_DIR.tar.gz" "$ARCHIVE_DIR"
+          shasum -a 256 "$ARCHIVE_DIR.tar.gz" > "$ARCHIVE_DIR.tar.gz.sha256"
+      - name: Archive (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Set-Location dist
+          Compress-Archive -Path $env:ARCHIVE_DIR -DestinationPath "$env:ARCHIVE_DIR.zip"
+          (Get-FileHash "$env:ARCHIVE_DIR.zip" -Algorithm SHA256).Hash.ToLower() + "  $env:ARCHIVE_DIR.zip" | Out-File -Encoding ascii "$env:ARCHIVE_DIR.zip.sha256"
+      # actions/upload-artifact v4.6.2, pinned to a reviewed commit.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ matrix.target }}
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/*.sha256
+          if-no-files-found: error
+
+  publish:
+    name: publish GitHub release
+    needs: [version, package]
+    if: needs.version.outputs.exists == 'false' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      # actions/download-artifact v4.3.0, pinned to a reviewed commit.
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v${{ needs.version.outputs.version }}
+        run: |
+          gh release create "$TAG" artifacts/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "$TAG (developer preview)" \
+            --notes "Unsigned developer-preview build. Bundles DB-IP City Lite (IP Geolocation by DB-IP, CC BY 4.0). See THIRD_PARTY_NOTICES.md." \
+            --prerelease

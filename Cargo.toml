@@ -1,0 +1,45 @@
+[workspace]
+resolver = "3"
+members = ["crates/terminal-core", "crates/platform", "crates/app"]
+exclude = ["third_party/block"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "MIT"
+repository = "https://github.com/sangshuduo/sci-fi-terminal"
+
+[workspace.dependencies]
+terminal-core = { path = "crates/terminal-core" }
+platform = { path = "crates/platform" }
+alacritty_terminal = "0.26.0"
+portable-pty = "0.9.0"
+iced = { version = "0.14.0", default-features = false, features = ["wgpu", "canvas", "tokio", "advanced", "thread-pool", "x11", "wayland", "image-without-codecs"] }
+sysinfo = { version = "0.39.6", default-features = false, features = ["system", "network"] }
+netstat2 = "0.11.2"
+maxminddb = "0.32.0"
+ureq = { version = "3.4.2", default-features = false, features = ["rustls"] }
+rodio = { version = "0.22.2", default-features = false, features = ["playback"] }
+directories = "6.0.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+# Only the codecs the file preview decodes; no encoders, no TIFF/EXR/etc.
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp"] }
+libc = "0.2.189"
+toml = "1.1"
+thiserror = "2.0"
+tracing = "0.1"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+# block 0.1.6 (via iced -> wgpu-hal -> metal) declares an extern static of an
+# uninhabited type, which future Rust will reject. Upstream is unmaintained and
+# wgpu still depends on it, so a one-line patched copy is vendored. See
+# third_party/block/PATCHED.md; remove this once wgpu drops `block`.
+[patch.crates-io]
+block = { path = "third_party/block" }

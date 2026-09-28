@@ -1,0 +1,12 @@
+# Pinned DB-IP "IP to City Lite" database (CC BY 4.0), bundled with releases.
+# The .mmdb itself is not committed (121 MB > GitHub's 100 MB file limit).
+# Fetch and verify it with: scripts/fetch-geoip.sh
+# Attribution required by the licence: "IP Geolocation by DB-IP" (https://db-ip.com).
+# To update: change `month`, run `scripts/fetch-geoip.sh --update`, review, commit.
+
+month = "2026-09"
+url = "https://download.db-ip.com/free/dbip-city-lite-2026-09.mmdb.gz"
+gz_sha256 = "c5d05b35a45c3eea0cadc728c8f5ad751693d4e270529b731442172a73f05954"
+mmdb_sha256 = "05a10861259c7966cb54d7181ef8c360de8c8829d182098c0e62a9b7d54cd50d"
+output = "assets/geo/dbip-city-lite.mmdb"
+license = "CC-BY-4.0"
