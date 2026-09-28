@@ -7,6 +7,7 @@
 
 pub mod files;
 pub mod metrics;
+pub mod preview;
 mod views;
 pub mod worker;
 
@@ -25,6 +26,9 @@ pub struct PanelContext<'a> {
     pub geoip_credit: Option<&'static str>,
     /// Globe drawing inputs for the network panel; `None` hides the globe.
     pub globe: Option<crate::render::globe::GlobeView<'a>>,
+    /// Directory viewer hover previews: `None` when disabled, otherwise the
+    /// file under the pointer (if any).
+    pub file_preview: Option<Option<&'a preview::HoverPreview>>,
 }
 
 /// Messages panels can emit.
@@ -87,7 +91,9 @@ impl BuiltinPanel {
             Self::System => views::system(sample, context.show_processes),
             Self::Network => views::network(sample, context.globe.as_ref(), context.geoip_credit),
             Self::Directory => match &sample.files {
-                Some(state) => files::view(state, move |m| wrap(PanelMsg::Files(m))),
+                Some(state) => files::view(state, context.file_preview, move |m| {
+                    wrap(PanelMsg::Files(m))
+                }),
                 None => views::placeholder("No focused shell"),
             },
         }
@@ -161,6 +167,7 @@ mod tests {
             show_processes: true,
             geoip_credit: Some("credit"),
             globe: None,
+            file_preview: Some(None),
         };
         for panel in PanelRegistry::builtin().iter() {
             let _element: Element<'_, PanelMsg> = panel.view(&context, |m| m);

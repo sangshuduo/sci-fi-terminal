@@ -22,8 +22,13 @@ rodio.workspace = true
 ureq.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+image.workspace = true
 toml.workspace = true
 thiserror.workspace = true
+
+# Non-blocking open for file previews (a FIFO must never stall the loader).
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
 
 [lints]
 workspace = true

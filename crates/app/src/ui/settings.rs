@@ -63,6 +63,7 @@ pub enum SettingsMsg {
     GeoIpPath(String),
     Files(bool),
     ShowHidden(bool),
+    FilePreview(bool),
     Globe(bool),
     GlobeRotate(bool),
     PublicIpLookup(bool),
@@ -165,6 +166,7 @@ impl Settings {
             SettingsMsg::GeoIpPath(path) => draft.panels.network.geoip_database = path,
             SettingsMsg::Files(on) => draft.panels.files.enabled = on,
             SettingsMsg::ShowHidden(on) => draft.panels.files.show_hidden = on,
+            SettingsMsg::FilePreview(on) => draft.panels.files.preview = on,
             SettingsMsg::Globe(on) => draft.panels.network.globe = on,
             SettingsMsg::GlobeRotate(on) => draft.panels.network.globe_rotate = on,
             SettingsMsg::PublicIpLookup(on) => draft.panels.network.public_ip_lookup = on,
@@ -592,6 +594,11 @@ fn panel_rows<'a, M: Clone + 'a>(
             "Show hidden files",
             settings.draft.panels.files.show_hidden,
             move |v| wrap(SettingsMsg::ShowHidden(v)),
+        ),
+        toggle(
+            "Preview files on hover",
+            settings.draft.panels.files.preview,
+            move |v| wrap(SettingsMsg::FilePreview(v)),
         ),
     ]
 }

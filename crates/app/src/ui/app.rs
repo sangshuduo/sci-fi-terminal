@@ -43,6 +43,7 @@ pub struct Options {
 pub enum AppEvent {
     Wake(SessionId),
     Monitor(Box<MonitorSample>),
+    Preview(std::path::PathBuf, Box<crate::panels::preview::FilePreview>),
 }
 
 struct EventNotify(UnboundedSender<AppEvent>);
@@ -116,6 +117,10 @@ pub struct App {
     pub(super) layouts: Vec<Layout>,
     pub(super) keyboard: Option<Keyboard>,
     pub(super) followed_pid: Option<u32>,
+    /// Directory viewer: the file under the pointer and its preview.
+    pub(super) file_hover: Option<crate::panels::preview::HoverPreview>,
+    /// Started on first hover; stops when dropped.
+    pub(super) preview_loader: Option<crate::panels::preview::PreviewLoader>,
     pub(super) globe: GlobeState,
     pub(super) globe_markers: Vec<Marker>,
     pub(super) last_globe_tick: Option<std::time::Instant>,
@@ -189,6 +194,8 @@ impl App {
             layouts,
             keyboard,
             followed_pid: None,
+            file_hover: None,
+            preview_loader: None,
             globe: GlobeState::default(),
             globe_markers: Vec::new(),
             last_globe_tick: None,
@@ -320,6 +327,26 @@ impl App {
             }
             Message::Panel(PanelMsg::Files(crate::panels::FilesMsg::InsertCd(path))) => {
                 self.insert_cd(&path);
+                Task::none()
+            }
+            Message::Panel(PanelMsg::Files(crate::panels::FilesMsg::Hover(path))) => {
+                self.hover_file(path);
+                Task::none()
+            }
+            Message::Panel(PanelMsg::Files(crate::panels::FilesMsg::Unhover(path))) => {
+                if self
+                    .file_hover
+                    .as_ref()
+                    .is_some_and(|hover| hover.path == path)
+                {
+                    self.file_hover = None;
+                }
+                Task::none()
+            }
+            Message::Event(AppEvent::Preview(path, preview)) => {
+                if let Some(hover) = self.file_hover.as_mut().filter(|hover| hover.path == path) {
+                    hover.content = Some(*preview);
+                }
                 Task::none()
             }
             Message::Osk(message) => self.on_osk(message),

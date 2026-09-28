@@ -68,6 +68,7 @@ public_ip_endpoint = "https://ipinfo.io/json"  # https only; JSON with location 
 [panels.files]
 enabled = true
 show_hidden = false
+preview = true         # hover a file for a text or image preview (read locally, bounded)
 
 [effects]
 preset = "off"

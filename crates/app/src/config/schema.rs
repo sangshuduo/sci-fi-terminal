@@ -230,6 +230,8 @@ impl Default for NetworkPanelSettings {
 pub struct FilesPanelSettings {
     pub enabled: bool,
     pub show_hidden: bool,
+    /// Hovering a file shows a bounded text or image preview.
+    pub preview: bool,
 }
 
 impl Default for FilesPanelSettings {
@@ -237,6 +239,7 @@ impl Default for FilesPanelSettings {
         Self {
             enabled: true,
             show_hidden: false,
+            preview: true,
         }
     }
 }

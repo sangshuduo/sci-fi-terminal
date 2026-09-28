@@ -474,6 +474,32 @@ impl App {
         }
     }
 
+    /// Track the hovered file and ask the background loader for its preview.
+    pub(super) fn hover_file(&mut self, path: std::path::PathBuf) {
+        use crate::panels::preview::{HoverPreview, PreviewLoader};
+        if !self.config.panels.files.preview
+            || self
+                .file_hover
+                .as_ref()
+                .is_some_and(|hover| hover.path == path)
+        {
+            return;
+        }
+        if self.preview_loader.is_none() {
+            let events = self.events.clone();
+            self.preview_loader = PreviewLoader::start(move |path, preview| {
+                let _ = events.unbounded_send(AppEvent::Preview(path, Box::new(preview)));
+            });
+        }
+        if let Some(loader) = &self.preview_loader {
+            loader.request(path.clone());
+        }
+        self.file_hover = Some(HoverPreview {
+            path,
+            content: None,
+        });
+    }
+
     /// Type a quoted `cd` into the focused terminal without pressing Enter.
     pub(super) fn insert_cd(&mut self, path: &std::path::Path) {
         let command = crate::panels::files::cd_command(path);

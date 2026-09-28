@@ -189,6 +189,12 @@ impl App {
                 home: self.globe_home(),
                 theme: &self.theme,
             }),
+            file_preview: self
+                .config
+                .panels
+                .files
+                .preview
+                .then_some(self.file_hover.as_ref()),
         }
     }
 

@@ -1,15 +1,21 @@
 //! Read-only directory viewer that follows the focused shell's working directory.
 //!
 //! Listing happens on the monitor worker thread; the UI only renders the
-//! result. Nothing here runs commands or opens files. The only
-//! terminal-affecting action is typing a quoted `cd` without pressing Enter.
+//! result. Nothing here runs commands; hovering a file asks the app for a
+//! read-only preview (see `preview`). The only terminal-affecting action is
+//! typing a quoted `cd` without pressing Enter.
 
 use std::cmp::Ordering;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use iced::widget::{Space, button, column, row, text};
+use iced::widget::{Space, button, column, container, image, mouse_area, row, text, tooltip};
 use iced::{Element, Length};
+
+use super::preview::{FilePreview, HoverPreview};
+
+/// Hover time before the preview window appears.
+const PREVIEW_DELAY: std::time::Duration = std::time::Duration::from_millis(300);
 
 /// Entries listed at most; larger directories are summarised.
 pub const MAX_ENTRIES: usize = 500;
@@ -110,10 +116,16 @@ pub enum FilesState {
 pub enum FilesMsg {
     /// Type `cd -- '<path>'` into the focused terminal without Enter.
     InsertCd(PathBuf),
+    /// The pointer entered a file row: load its preview.
+    Hover(PathBuf),
+    /// The pointer left that row.
+    Unhover(PathBuf),
 }
 
+/// `hover` is `Some` when previews are enabled: the file under the pointer, if any.
 pub fn view<'a, M: Clone + 'a>(
     state: &'a FilesState,
+    hover: Option<Option<&'a HoverPreview>>,
     wrap: impl Fn(FilesMsg) -> M + Copy + 'a,
 ) -> Element<'a, M> {
     let listing = match state {
@@ -148,7 +160,11 @@ pub fn view<'a, M: Clone + 'a>(
                 .on_press(wrap(FilesMsg::InsertCd(target)))
                 .into()
         } else {
-            row![Space::new().width(2), label].into()
+            let row: Element<'a, M> = row![Space::new().width(2), label].into();
+            match hover {
+                Some(hovered) => previewable(row, listing.path.join(&entry.name), hovered, wrap),
+                None => row,
+            }
         };
         list = list.push(item);
     }
@@ -163,6 +179,59 @@ pub fn view<'a, M: Clone + 'a>(
     ]
     .spacing(4)
     .into()
+}
+
+/// Wrap a file row so hovering it reports the path and shows a floating preview.
+fn previewable<'a, M: Clone + 'a>(
+    row: Element<'a, M>,
+    path: PathBuf,
+    hovered: Option<&'a HoverPreview>,
+    wrap: impl Fn(FilesMsg) -> M + Copy + 'a,
+) -> Element<'a, M> {
+    let content = match hovered.filter(|hover| hover.path == path) {
+        Some(HoverPreview {
+            content: Some(preview),
+            ..
+        }) => preview_window(preview),
+        _ => text("Loading preview…").size(11).into(),
+    };
+    let tip = tooltip(row, content, tooltip::Position::Right)
+        .gap(8)
+        .delay(PREVIEW_DELAY)
+        .style(container::bordered_box);
+    mouse_area(tip)
+        .on_enter(wrap(FilesMsg::Hover(path.clone())))
+        .on_exit(wrap(FilesMsg::Unhover(path)))
+        .into()
+}
+
+fn preview_window<'a, M: 'a>(preview: &'a FilePreview) -> Element<'a, M> {
+    let body: Element<'a, M> = match preview {
+        FilePreview::Text { lines, truncated } => {
+            let mut col = column(lines.iter().map(|line| {
+                text(line.as_str())
+                    .size(11)
+                    .font(iced::Font::MONOSPACE)
+                    .into()
+            }));
+            if *truncated {
+                col = col.push(text("…").size(11));
+            }
+            col.into()
+        }
+        FilePreview::Image {
+            handle,
+            width,
+            height,
+        } => column![
+            image(handle.clone()),
+            text(format!("{width} × {height}")).size(10)
+        ]
+        .spacing(4)
+        .into(),
+        FilePreview::Note(note) => text(note.as_str()).size(11).into(),
+    };
+    container(body).padding(8).max_width(560).into()
 }
 
 /// Replace the home directory prefix with `~` for display only.
